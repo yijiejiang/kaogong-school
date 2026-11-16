@@ -4,8 +4,10 @@ import {
   ArrowLeft,
   CheckCircle2,
   Loader2,
+  RefreshCw,
   Save,
   ShieldCheck,
+  SlidersHorizontal,
   UserRound,
   Wifi,
   XCircle,
@@ -14,13 +16,56 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { ROLE_OPTIONS } from "@/lib/agents";
-import { fetchSettings, saveSettings, testLlm } from "@/lib/api";
-import type { SettingsBundle, SettingsPayload } from "@/lib/types";
+import {
+  fetchModels,
+  fetchSettings,
+  saveSettings,
+  testLlm,
+} from "@/lib/api";
+import type {
+  RoleModelConfig,
+  SettingsBundle,
+  SettingsPayload,
+} from "@/lib/types";
 import { normalizeUserId, setUserId, useUserId } from "@/lib/user";
 
+const emptyRole: RoleModelConfig = {
+  model: "",
+  temperature: 0.3,
+  max_tokens: 0,
+  top_p: 0,
+  api_base: "",
+  api_key: "",
+};
+
 const emptyRoles = Object.fromEntries(
-  ROLE_OPTIONS.map((role) => [role.key, { model: "", temperature: 0.3 }]),
+  ROLE_OPTIONS.map((role) => [role.key, { ...emptyRole }]),
 ) as SettingsPayload["llm"]["roles"];
+
+const PROVIDER_PRESETS = [
+  {
+    label: "OpenDesign / AMR",
+    base: "https://amr-link.open-design.ai/v1",
+  },
+  { label: "OpenAI", base: "https://api.openai.com/v1" },
+  { label: "DeepSeek", base: "https://api.deepseek.com/v1" },
+  {
+    label: "硅基流动 SiliconFlow",
+    base: "https://api.siliconflow.cn/v1",
+  },
+  { label: "Moonshot Kimi", base: "https://api.moonshot.cn/v1" },
+  {
+    label: "智谱 GLM",
+    base: "https://open.bigmodel.cn/api/paas/v4",
+  },
+  {
+    label: "通义千问 DashScope",
+    base: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  },
+  { label: "OpenRouter", base: "https://openrouter.ai/api/v1" },
+  { label: "Ollama 本地", base: "http://localhost:11434/v1" },
+  { label: "LM Studio 本地", base: "http://localhost:1234/v1" },
+];
 
 const fieldClass =
   "w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-[#b3aa9c] focus:border-[#cfc4b5] focus:ring-2 focus:ring-[#efe7da]";
@@ -33,7 +78,11 @@ export default function SettingsPage() {
     api_key: "",
     default_model: "",
     embedding_model: "",
+    embedding_api_base: "",
+    embedding_api_key: "",
     asr_model: "",
+    asr_api_base: "",
+    asr_api_key: "",
     input_price_per_m: 0,
     output_price_per_m: 0,
     roles: emptyRoles,
@@ -45,9 +94,18 @@ export default function SettingsPage() {
     daily_minutes: 120,
   });
   const [userIdDraft, setUserIdDraft] = useState(userId);
+  const [expandedRoles, setExpandedRoles] = useState<Record<string, boolean>>(
+    {},
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testingRole, setTestingRole] = useState<string | null>(null);
+  const [modelOptions, setModelOptions] = useState<Record<string, string[]>>(
+    {},
+  );
+  const [modelLoading, setModelLoading] = useState<string | null>(null);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
   const [notice, setNotice] = useState<{
     kind: "success" | "error";
     text: string;
@@ -61,10 +119,24 @@ export default function SettingsPage() {
       api_key: "",
       default_model: data.llm.default_model,
       embedding_model: data.llm.embedding_model,
+      embedding_api_base: data.llm.embedding_api_base ?? "",
+      embedding_api_key: "",
       asr_model: data.llm.asr_model ?? "",
+      asr_api_base: data.llm.asr_api_base ?? "",
+      asr_api_key: "",
       input_price_per_m: data.llm.input_price_per_m ?? 0,
       output_price_per_m: data.llm.output_price_per_m ?? 0,
-      roles: { ...emptyRoles, ...data.llm.roles },
+      roles: Object.fromEntries(
+        ROLE_OPTIONS.map((role) => [
+          role.key,
+          {
+            ...emptyRole,
+            ...(data.llm.roles[role.key] ?? {}),
+            api_key: "",
+            clear_api_key: false,
+          },
+        ]),
+      ),
     });
     setProfile(data.profile);
   }, []);
@@ -104,14 +176,14 @@ export default function SettingsPage() {
     }
   };
 
-  const updateRole = (key: string, model: string) => {
+  const updateRole = (key: string, patch: Partial<RoleModelConfig>) => {
     setLlm((prev) => ({
       ...prev,
       roles: {
         ...prev.roles,
         [key]: {
-          ...(prev.roles[key] ?? { temperature: 0.3 }),
-          model,
+          ...(prev.roles[key] ?? emptyRole),
+          ...patch,
         },
       },
     }));
@@ -122,8 +194,7 @@ export default function SettingsPage() {
     setNotice(null);
     try {
       const result = await saveSettings({ llm, profile }, userId);
-      setBundle(result);
-      setLlm((prev) => ({ ...prev, api_key: "" }));
+      applyBundle(result);
       setNotice({ kind: "success", text: "已保存。回到对话页即可使用。" });
     } catch (error) {
       setNotice({
@@ -135,18 +206,22 @@ export default function SettingsPage() {
     }
   };
 
-  const handleTest = async () => {
+  const handleTest = async (role?: string) => {
     setTesting(true);
+    if (role) setTestingRole(role);
     setNotice(null);
+    const who = role
+      ? ROLE_OPTIONS.find((item) => item.key === role)?.label ?? role
+      : "全局默认";
     try {
-      const result = await testLlm(llm);
+      const result = await testLlm(llm, role);
       if (result.ok) {
         setNotice({
           kind: "success",
-          text: `连接成功 · ${result.model ?? "模型"} · ${result.latency_ms ?? 0} ms`,
+          text: `${who}连接成功 · ${result.model ?? "模型"} · ${result.latency_ms ?? 0} ms`,
         });
       } else {
-        setNotice({ kind: "error", text: result.error ?? "连接失败" });
+        setNotice({ kind: "error", text: `${who}：${result.error ?? "连接失败"}` });
       }
     } catch (error) {
       setNotice({
@@ -155,6 +230,31 @@ export default function SettingsPage() {
       });
     } finally {
       setTesting(false);
+      setTestingRole(null);
+    }
+  };
+
+  const handleFetchModels = async (
+    scope: string,
+    payload: { api_base?: string; api_key?: string; role?: string },
+  ) => {
+    setModelLoading(scope);
+    setModelNotice(null);
+    try {
+      const result = await fetchModels(payload);
+      setModelOptions((prev) => ({
+        ...prev,
+        [scope]: result.models.map((item) => item.id),
+      }));
+      setModelNotice(
+        `已从 ${result.base_url} 获取 ${result.count} 个模型，可在模型输入框下拉选择。`,
+      );
+    } catch (error) {
+      setModelNotice(
+        error instanceof Error ? error.message : "获取模型列表失败",
+      );
+    } finally {
+      setModelLoading(null);
     }
   };
 
@@ -356,10 +456,46 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {modelNotice && (
+              <div className="mb-4 rounded-xl border border-[#f0d9a8] bg-[#fffaf0] px-3 py-2.5 text-[11px] leading-5 text-[#8a6a24]">
+                {modelNotice}
+              </div>
+            )}
+
+            <label className="mb-4 block">
+              <span className="mb-1.5 block text-xs font-medium text-ink">
+                平台预设
+              </span>
+              <select
+                className={fieldClass}
+                value={
+                  PROVIDER_PRESETS.find(
+                    (item) => item.base === llm.api_base,
+                  )?.base ?? ""
+                }
+                onChange={(event) => {
+                  if (event.target.value) {
+                    setLlm({ ...llm, api_base: event.target.value });
+                  }
+                }}
+              >
+                <option value="">自定义 / 已填写</option>
+                {PROVIDER_PRESETS.map((item) => (
+                  <option key={item.label} value={item.base}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-[10px] leading-4 text-muted">
+                选择后会填入默认 Base URL；也可以用下面的输入框填写任意
+                OpenAI 兼容端点。
+              </span>
+            </label>
+
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block sm:col-span-2">
                 <span className="mb-1.5 block text-xs font-medium text-ink">
-                  Base URL
+                  默认 Base URL
                 </span>
                 <input
                   className={fieldClass}
@@ -372,7 +508,7 @@ export default function SettingsPage() {
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-ink">
-                  API Key
+                  默认 API Key
                 </span>
                 <input
                   type="password"
@@ -389,121 +525,475 @@ export default function SettingsPage() {
                   autoComplete="off"
                 />
               </label>
-              <label className="block">
+              <div className="block">
                 <span className="mb-1.5 block text-xs font-medium text-ink">
                   默认模型
                 </span>
-                <input
-                  className={fieldClass}
-                  value={llm.default_model}
-                  onChange={(event) =>
-                    setLlm({ ...llm, default_model: event.target.value })
-                  }
-                  placeholder="gpt-4o-mini / deepseek/deepseek-chat"
-                />
-              </label>
+                <div className="flex gap-2">
+                  <input
+                    list="models-global"
+                    className={fieldClass}
+                    value={llm.default_model}
+                    onChange={(event) =>
+                      setLlm({ ...llm, default_model: event.target.value })
+                    }
+                    placeholder="gpt-4o-mini / deepseek-chat"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleFetchModels("global", {
+                        api_base: llm.api_base,
+                        api_key: llm.api_key,
+                      })
+                    }
+                    disabled={modelLoading === "global"}
+                    title="从当前 Base URL 获取模型列表"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 text-[11px] font-medium text-ink transition hover:border-[#cfc4b5] disabled:opacity-60"
+                  >
+                    {modelLoading === "global" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    获取
+                  </button>
+                </div>
+                <datalist id="models-global">
+                  {(modelOptions.global ?? []).map((model) => (
+                    <option key={model} value={model} />
+                  ))}
+                </datalist>
+              </div>
             </div>
 
-            <label className="mt-4 block">
-              <span className="mb-1.5 block text-xs font-medium text-ink">
-                Embedding 模型（可选）
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="block sm:col-span-2">
+                <span className="mb-1.5 block text-xs font-medium text-ink">
+                  Embedding 模型（可选）
+                </span>
+                <div className="flex gap-2">
+                  <input
+                    list="models-embedding"
+                    className={fieldClass}
+                    value={llm.embedding_model}
+                    onChange={(event) =>
+                      setLlm({ ...llm, embedding_model: event.target.value })
+                    }
+                    placeholder="留空使用本地哈希向量；可填 text-embedding-3-small / bge-m3"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleFetchModels("embedding", {
+                        api_base: llm.embedding_api_base || llm.api_base,
+                        api_key: llm.embedding_api_key,
+                      })
+                    }
+                    disabled={modelLoading === "embedding"}
+                    title="获取模型列表"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 text-[11px] font-medium text-ink transition hover:border-[#cfc4b5] disabled:opacity-60"
+                  >
+                    {modelLoading === "embedding" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    获取
+                  </button>
+                </div>
+                <datalist id="models-embedding">
+                  {(modelOptions.embedding ?? []).map((model) => (
+                    <option key={model} value={model} />
+                  ))}
+                </datalist>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink">
+                  Embedding Base URL（可选）
+                </span>
+                <input
+                  className={fieldClass}
+                  value={llm.embedding_api_base}
+                  onChange={(event) =>
+                    setLlm({ ...llm, embedding_api_base: event.target.value })
+                  }
+                  placeholder="留空沿用默认 Base URL"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink">
+                  Embedding API Key（可选）
+                </span>
+                <input
+                  type="password"
+                  className={fieldClass}
+                  value={llm.embedding_api_key}
+                  onChange={(event) =>
+                    setLlm({ ...llm, embedding_api_key: event.target.value })
+                  }
+                  placeholder={
+                    bundle?.llm.embedding_api_key_set
+                      ? "已配置，留空保持不变"
+                      : "留空沿用默认 API Key"
+                  }
+                  autoComplete="off"
+                />
+              </label>
+              <span className="text-[10px] leading-4 text-muted sm:col-span-2">
+                留空 = 本地哈希向量（演示，无需 Key）；填写模型后可用独立端点与 Key
+                调用 Embedding API。更换模型后请到资料库重新索引。
               </span>
-              <input
-                className={fieldClass}
-                value={llm.embedding_model}
-                onChange={(event) =>
-                  setLlm({ ...llm, embedding_model: event.target.value })
-                }
-                placeholder="留空使用本地哈希向量；可填 text-embedding-3-small / bge-m3"
-              />
-              <span className="mt-1 block text-[10px] leading-4 text-muted">
-                留空 = 本地哈希向量（演示，无需 Key）；填写后复用上面的 Base URL /
-                API Key 调用 Embedding API。更换模型后请到资料库重新索引。
-              </span>
-            </label>
+            </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block">
+              <div className="block sm:col-span-2">
                 <span className="mb-1.5 block text-xs font-medium text-ink">
                   语音转写模型（可选）
                 </span>
+                <div className="flex gap-2">
+                  <input
+                    list="models-asr"
+                    className={fieldClass}
+                    value={llm.asr_model}
+                    onChange={(event) =>
+                      setLlm({ ...llm, asr_model: event.target.value })
+                    }
+                    placeholder="whisper-1 / FunAudioLLM/SenseVoiceSmall"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleFetchModels("asr", {
+                        api_base: llm.asr_api_base || llm.api_base,
+                        api_key: llm.asr_api_key,
+                      })
+                    }
+                    disabled={modelLoading === "asr"}
+                    title="获取模型列表"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 text-[11px] font-medium text-ink transition hover:border-[#cfc4b5] disabled:opacity-60"
+                  >
+                    {modelLoading === "asr" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    获取
+                  </button>
+                </div>
+                <datalist id="models-asr">
+                  {(modelOptions.asr ?? []).map((model) => (
+                    <option key={model} value={model} />
+                  ))}
+                </datalist>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink">
+                  语音转写 Base URL（可选）
+                </span>
                 <input
                   className={fieldClass}
-                  value={llm.asr_model}
+                  value={llm.asr_api_base}
                   onChange={(event) =>
-                    setLlm({ ...llm, asr_model: event.target.value })
+                    setLlm({ ...llm, asr_api_base: event.target.value })
                   }
-                  placeholder="whisper-1 / FunAudioLLM/SenseVoiceSmall"
+                  placeholder="留空沿用默认 Base URL"
                 />
-                <span className="mt-1 block text-[10px] leading-4 text-muted">
-                  复用上面的 Base URL / API Key，调用 /audio/transcriptions；
-                  留空时如果有 faster-whisper 会退回本地转写。
-                </span>
               </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-ink">
-                    输入价 / 百万 token
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    className={fieldClass}
-                    value={llm.input_price_per_m}
-                    onChange={(event) =>
-                      setLlm({
-                        ...llm,
-                        input_price_per_m: Number(event.target.value) || 0,
-                      })
-                    }
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-ink">
-                    输出价 / 百万 token
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    className={fieldClass}
-                    value={llm.output_price_per_m}
-                    onChange={(event) =>
-                      setLlm({
-                        ...llm,
-                        output_price_per_m: Number(event.target.value) || 0,
-                      })
-                    }
-                  />
-                </label>
-                <span className="text-[10px] leading-4 text-muted sm:col-span-2">
-                  用于看板的成本估算；填 0 时只统计 token，不计算金额。
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink">
+                  语音转写 API Key（可选）
                 </span>
-              </div>
+                <input
+                  type="password"
+                  className={fieldClass}
+                  value={llm.asr_api_key}
+                  onChange={(event) =>
+                    setLlm({ ...llm, asr_api_key: event.target.value })
+                  }
+                  placeholder={
+                    bundle?.llm.asr_api_key_set
+                      ? "已配置，留空保持不变"
+                      : "留空沿用默认 API Key"
+                  }
+                  autoComplete="off"
+                />
+              </label>
+              <span className="text-[10px] leading-4 text-muted sm:col-span-2">
+                复用独立端点调用 /audio/transcriptions；留空时如果有
+                faster-whisper 会退回本地转写。
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 rounded-xl border border-line bg-[#faf7f1] p-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink">
+                  输入价 / 百万 token
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={fieldClass}
+                  value={llm.input_price_per_m}
+                  onChange={(event) =>
+                    setLlm({
+                      ...llm,
+                      input_price_per_m: Number(event.target.value) || 0,
+                    })
+                  }
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink">
+                  输出价 / 百万 token
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={fieldClass}
+                  value={llm.output_price_per_m}
+                  onChange={(event) =>
+                    setLlm({
+                      ...llm,
+                      output_price_per_m: Number(event.target.value) || 0,
+                    })
+                  }
+                />
+              </label>
+              <span className="text-[10px] leading-4 text-muted sm:col-span-2">
+                用于看板的成本估算；填 0 时只统计 token，不计算金额。
+              </span>
             </div>
 
             <div className="mt-5 rounded-xl border border-line bg-[#faf7f1] p-4">
-              <div className="mb-3 text-xs font-medium text-ink">
+              <div className="mb-1 text-xs font-medium text-ink">
                 角色模型覆盖
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {ROLE_OPTIONS.map((role) => (
-                  <label key={role.key} className="block">
-                    <span className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted">
-                      <span className="font-medium text-ink">{role.label}</span>
-                      <span>{role.hint}</span>
-                    </span>
-                    <input
-                      className={fieldClass}
-                      value={llm.roles[role.key]?.model ?? ""}
-                      onChange={(event) =>
-                        updateRole(role.key, event.target.value)
-                      }
-                      placeholder="留空则使用默认模型"
-                    />
-                  </label>
-                ))}
+              <p className="mb-3 text-[10px] leading-4 text-muted">
+                每个角色可以单独指定模型、端点、Key 和采样参数；留空沿用全局默认。
+              </p>
+              <div className="space-y-3">
+                {ROLE_OPTIONS.map((role) => {
+                  const config = llm.roles[role.key] ?? emptyRole;
+                  const expanded = Boolean(expandedRoles[role.key]);
+                  const overridden = Boolean(
+                    config.api_base ||
+                      config.api_key ||
+                      config.api_key_set ||
+                      config.max_tokens ||
+                      config.top_p ||
+                      config.temperature !== 0.3,
+                  );
+                  return (
+                    <div
+                      key={role.key}
+                      className="rounded-xl border border-line bg-white p-3"
+                    >
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div className="flex min-w-0 flex-1 items-end gap-2">
+                          <label className="block min-w-0 flex-1">
+                            <span className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted">
+                              <span className="font-medium text-ink">
+                                {role.label}
+                              </span>
+                              <span>{role.hint}</span>
+                            </span>
+                            <input
+                              list={`models-role-${role.key}`}
+                              className={fieldClass}
+                              value={config.model}
+                              onChange={(event) =>
+                                updateRole(role.key, {
+                                  model: event.target.value,
+                                })
+                              }
+                              placeholder="留空则使用默认模型"
+                            />
+                            <datalist id={`models-role-${role.key}`}>
+                              {(modelOptions[role.key] ?? []).map((model) => (
+                                <option key={model} value={model} />
+                              ))}
+                            </datalist>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleFetchModels(role.key, {
+                                api_base: config.api_base,
+                                api_key: config.api_key,
+                                role: role.key,
+                              })
+                            }
+                            disabled={modelLoading === role.key}
+                            title={`获取 ${role.label} 的模型列表`}
+                            className="inline-flex h-[42px] shrink-0 items-center gap-1 rounded-xl border border-line bg-white px-3 text-[11px] font-medium text-ink transition hover:border-[#cfc4b5] disabled:opacity-60"
+                          >
+                            {modelLoading === role.key ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                            获取
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedRoles((prev) => ({
+                              ...prev,
+                              [role.key]: !prev[role.key],
+                            }))
+                          }
+                          className="inline-flex h-[42px] items-center gap-1 rounded-xl border border-line bg-white px-3 text-[11px] font-medium text-ink transition hover:border-[#cfc4b5]"
+                        >
+                          <SlidersHorizontal className="h-3.5 w-3.5" />
+                          {expanded ? "收起" : "高级"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleTest(role.key)}
+                          disabled={testing || saving}
+                          title={`测试 ${role.label}`}
+                          className="inline-flex h-[42px] items-center gap-1 rounded-xl border border-line bg-white px-3 text-[11px] font-medium text-ink transition hover:border-[#cfc4b5] disabled:opacity-60"
+                        >
+                          {testingRole === role.key ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Wifi className="h-3.5 w-3.5" />
+                          )}
+                          测试
+                        </button>
+                      </div>
+
+                      {overridden && !expanded && (
+                        <div className="mt-2 text-[10px] text-[#8a6a24]">
+                          已单独配置
+                          {config.api_base ? " · 独立端点" : ""}
+                          {config.api_key_set || config.api_key
+                            ? " · 独立 Key"
+                            : ""}
+                          {config.max_tokens
+                            ? ` · max_tokens ${config.max_tokens}`
+                            : ""}
+                          {config.top_p
+                            ? ` · top_p ${config.top_p}`
+                            : ""}
+                        </div>
+                      )}
+
+                      {expanded && (
+                        <div className="mt-3 grid gap-3 border-t border-line pt-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1 block text-[10px] text-muted">
+                              temperature
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={2}
+                              step={0.1}
+                              className={fieldClass}
+                              value={config.temperature}
+                              onChange={(event) =>
+                                updateRole(role.key, {
+                                  temperature: Number(event.target.value) || 0,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-[10px] text-muted">
+                              max_tokens（0 = 不限制）
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={64}
+                              className={fieldClass}
+                              value={config.max_tokens}
+                              onChange={(event) =>
+                                updateRole(role.key, {
+                                  max_tokens: Number(event.target.value) || 0,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-[10px] text-muted">
+                              top_p（0 = 使用供应商默认）
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              className={fieldClass}
+                              value={config.top_p}
+                              onChange={(event) =>
+                                updateRole(role.key, {
+                                  top_p: Number(event.target.value) || 0,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-[10px] text-muted">
+                              Base URL
+                            </span>
+                            <input
+                              className={fieldClass}
+                              value={config.api_base}
+                              onChange={(event) =>
+                                updateRole(role.key, {
+                                  api_base: event.target.value,
+                                })
+                              }
+                              placeholder="留空沿用全局 Base URL"
+                            />
+                          </label>
+                          <label className="block sm:col-span-2">
+                            <span className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted">
+                              <span>API Key</span>
+                              {config.api_key_set && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateRole(role.key, {
+                                      api_key: "",
+                                      clear_api_key: true,
+                                    })
+                                  }
+                                  className="text-[10px] font-medium text-[#a33a2a] hover:underline"
+                                >
+                                  清除独立 Key
+                                </button>
+                              )}
+                            </span>
+                            <input
+                              type="password"
+                              className={fieldClass}
+                              value={config.api_key}
+                              onChange={(event) =>
+                                updateRole(role.key, {
+                                  api_key: event.target.value,
+                                  clear_api_key: false,
+                                })
+                              }
+                              placeholder={
+                                config.api_key_set
+                                  ? "已配置，留空保持不变"
+                                  : "留空沿用全局 API Key"
+                              }
+                              autoComplete="off"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

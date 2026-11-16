@@ -27,6 +27,12 @@ export type SessionSummary = {
 export type RoleModelConfig = {
   model: string;
   temperature: number;
+  max_tokens: number;
+  top_p: number;
+  api_base: string;
+  api_key: string;
+  api_key_set?: boolean;
+  clear_api_key?: boolean;
 };
 
 export type SettingsBundle = {
@@ -36,7 +42,13 @@ export type SettingsBundle = {
     api_key_set: boolean;
     default_model: string;
     embedding_model: string;
+    embedding_api_base: string;
+    embedding_api_key: string;
+    embedding_api_key_set: boolean;
     asr_model: string;
+    asr_api_base: string;
+    asr_api_key: string;
+    asr_api_key_set: boolean;
     input_price_per_m: number;
     output_price_per_m: number;
     roles: Record<string, RoleModelConfig>;
@@ -61,7 +73,11 @@ export type SettingsPayload = {
     api_key: string;
     default_model: string;
     embedding_model: string;
+    embedding_api_base: string;
+    embedding_api_key: string;
     asr_model: string;
+    asr_api_base: string;
+    asr_api_key: string;
     input_price_per_m: number;
     output_price_per_m: number;
     roles: Record<string, RoleModelConfig>;
@@ -456,4 +472,15 @@ export type UsageSummary = {
   by_model: UsageModel[];
   daily: UsageDay[];
   recent: UsageRecent[];
+};
+
+export type ModelInfo = {
+  id: string;
+  owned_by: string;
+};
+
+export type ModelListResult = {
+  models: ModelInfo[];
+  count: number;
+  base_url: string;
 };

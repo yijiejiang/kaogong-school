@@ -100,6 +100,28 @@ actor APIClient {
         try await get("/api/settings", query: ["user_id": userId])
     }
 
+    func availableModels(
+        apiBase: String,
+        apiKey: String,
+        role: String?
+    ) async throws -> [String] {
+        struct ModelItem: Decodable { let id: String }
+        struct Response: Decodable {
+            let models: [ModelItem]
+            let count: Int
+        }
+        let response: Response = try await send(
+            "/api/settings/models",
+            method: "POST",
+            json: [
+                "api_base": apiBase,
+                "api_key": apiKey,
+                "role": role ?? NSNull(),
+            ]
+        )
+        return response.models.map(\.id)
+    }
+
     func saveSettings(_ payload: SettingsPayload) async throws -> SettingsBundle {
         try await send(
             "/api/settings",

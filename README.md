@@ -2,6 +2,8 @@
 
 个人考公多智能体辅导系统。目标：**单一对话框 + 辅导员主入口 + 专业老师协同 + 资料/知识/出卷/改卷/学情闭环**。
 
+架构图与分层说明见 [docs/architecture.md](docs/architecture.md)。
+
 ## 当前阶段
 
 - **P0 已跑通**：辅导员主入口、学习督导/出卷老师转接、SSE 流式、会话持久化、LLM 按角色配置。
@@ -9,7 +11,7 @@
 - **P2 已接入**：题库与组卷、考试中心、限时答题、自动保存、客观题+主观题评分、举一反三、错题本、掌握度 v1、改卷老师对话解释。
 - **P3 已接入**：学情看板（雷达/趋势/热力图/薄弱点/覆盖度）、掌握度 v2、周计划与每日任务、周报、督导老师真实学情与计划生成。
 - **P4 已接入**：图片 OCR、视频字幕/语音转写、每日提醒/周报通知、PWA；图片/音频/视频入库。
-- **P4.5 已接入**：五模块题库与申论主观题、AI 原创题、按角色 token/成本看板、本地多用户、launchd 常驻、Cloud Run 部署文件、SwiftUI iOS 客户端。
+- **P4.5 已接入**：五模块题库与申论主观题、AI 原创题、按角色 token/成本看板、模型自动发现与按角色独立配置、本地多用户、launchd 常驻、Cloud Run 部署文件、SwiftUI iOS 客户端。
 - **后续**：真实 LLM 全链路验收、对象存储、登录鉴权、多设备同步、语音对话与更完整的移动端。
 
 ## 技术栈
@@ -73,6 +75,9 @@ make frontend
 所以**不需要 Embedding Key 也能上传、分块、检索、带引用回答**。
 
 配置真实模型后，在 `backend/.env` 里设置 `MOCK_LLM=0` 并重启后端即可切换。
+
+> 如果设置页填了真实 API 仍显示「本地演示模式」，说明后端是以 `MOCK_LLM=1` 启动的。
+> 请用 `make backend` 启动，而不是 `make backend-demo`；设置页的模型配置不会覆盖这个启动参数。
 
 ## P1 能力
 
@@ -140,6 +145,19 @@ P2 已完成 AI 原创题、多模块题库与图片/音频/视频入库；真�
 - 通知通过 `dedupe_key` 去重：同一天同一用户只生成一条每日提醒、一条周报。
 - 视频字幕/音频下载可能受平台限流或需要登录 Cookie；失败时会回退到视频简介，不会编造字幕内容。
 
+## 模型配置
+
+- **主流平台预设**：OpenDesign / AMR、OpenAI、DeepSeek、硅基流动、Moonshot、智谱 GLM、
+  通义千问 DashScope、OpenRouter、Ollama、LM Studio；选中后自动填入 Base URL。
+- **模型自动发现**：填好 Base URL / API Key 后点「获取」，调用 OpenAI 兼容的 `/models`
+  拉取模型列表，可在默认模型、角色模型、Embedding、语音转写输入框下拉选择。
+- **全局默认**：Base URL、API Key、默认模型；未单独配置的角色和服务都会使用它。
+- **按角色独立配置**：每个角色可设置自己的模型、Base URL、API Key、temperature、max_tokens、top_p；
+  留空即沿用全局。适合辅导员用便宜模型、出卷/改卷用强推理模型，或不同角色接不同供应商。
+- **Embedding / 语音转写**：各自支持独立的模型、Base URL 与 API Key，留空沿用全局。
+- **安全**：全局与角色的 API Key 都加密存储，接口只返回脱敏值；角色 Key 可一键清除。
+- **连通性测试**：全局和每个角色都有独立「测试」按钮，按该角色自己的端点和参数发起请求。
+
 ## Embedding 与检索
 
 - **不填 Embedding 模型**：使用 `hash-384` 本地哈希向量，不需要 Key，适合演示和中小资料库。
@@ -202,6 +220,7 @@ POST /api/asr/transcribe          音频转文字
 
 GET  /api/users                   本地学习者列表
 GET/PUT /api/settings             LLM / Embedding / ASR / 单价 / 学习档案
+POST /api/settings/models         用 Base URL + Key 获取模型列表
 POST /api/settings/test           LLM 连通性测试
 ```
 

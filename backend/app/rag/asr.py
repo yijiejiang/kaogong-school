@@ -58,8 +58,15 @@ def resolve_asr_model(llm: LlmSettings) -> str:
     )
 
 
+def resolve_asr_endpoint(llm: LlmSettings) -> tuple[str, str]:
+    base = (llm.asr_api_base or llm.api_base).strip()
+    key = (llm.asr_api_key or llm.api_key).strip()
+    return base, key
+
+
 def api_configured(llm: LlmSettings) -> bool:
-    return bool(llm.api_base.strip() and llm.api_key.strip())
+    base, key = resolve_asr_endpoint(llm)
+    return bool(base and key)
 
 
 def local_available() -> bool:
@@ -98,9 +105,10 @@ def _parse_api_payload(payload: dict) -> str:
 async def _transcribe_via_api(
     path: Path, filename: str, llm: LlmSettings, language: str
 ) -> AsrResult:
-    url = f"{llm.api_base.rstrip('/')}/audio/transcriptions"
+    api_base, api_key = resolve_asr_endpoint(llm)
+    url = f"{api_base.rstrip('/')}/audio/transcriptions"
     model = resolve_asr_model(llm)
-    headers = {"Authorization": f"Bearer {llm.api_key.strip()}"}
+    headers = {"Authorization": f"Bearer {api_key}"}
     data = {
         "model": model,
         "language": language,

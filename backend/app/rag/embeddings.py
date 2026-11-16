@@ -122,6 +122,6 @@ def get_embedding_service(llm: LlmSettings | None = None) -> EmbeddingService:
 
     return ApiEmbeddingService(
         model=model,
-        api_base=llm.api_base if llm else "",
-        api_key=llm.api_key if llm else "",
+        api_base=(llm.embedding_api_base or llm.api_base) if llm else "",
+        api_key=(llm.embedding_api_key or llm.api_key) if llm else "",
     )

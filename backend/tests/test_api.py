@@ -8,6 +8,7 @@ import pytest
 
 TEST_DB = Path(tempfile.gettempdir()) / "kaogong_pytest.db"
 os.environ["MOCK_LLM"] = "1"
+os.environ["ENABLE_SCHEDULER"] = "0"
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB}"
 
 from fastapi.testclient import TestClient
@@ -592,6 +593,107 @@ def test_per_user_profiles_are_isolated() -> None:
         assert any(item["id"] == user_id for item in users)
 
 
+def test_role_specific_llm_settings() -> None:
+    import sqlite3
+
+    with TestClient(app) as client:
+        bundle = client.get("/api/settings").json()
+        payload = {
+            "llm": {
+                "api_base": bundle["llm"]["api_base"],
+                "api_key": "",
+                "default_model": bundle["llm"]["default_model"],
+                "embedding_model": bundle["llm"]["embedding_model"],
+                "embedding_api_base": "",
+                "embedding_api_key": "",
+                "asr_model": bundle["llm"]["asr_model"],
+                "asr_api_base": "",
+                "asr_api_key": "",
+                "input_price_per_m": bundle["llm"]["input_price_per_m"],
+                "output_price_per_m": bundle["llm"]["output_price_per_m"],
+                "roles": {
+                    "counselor": {
+                        "model": "deepseek-chat",
+                        "temperature": 0.2,
+                        "max_tokens": 512,
+                        "top_p": 0.9,
+                        "api_base": "https://role.example/v1",
+                        "api_key": "sk-role-secret",
+                    }
+                },
+            },
+            "profile": bundle["profile"],
+        }
+        saved = client.put("/api/settings", json=payload)
+        assert saved.status_code == 200, saved.text
+        role = saved.json()["llm"]["roles"]["counselor"]
+        assert role["model"] == "deepseek-chat"
+        assert role["api_base"] == "https://role.example/v1"
+        assert role["max_tokens"] == 512
+        assert role["top_p"] == 0.9
+        assert role["api_key_set"] is True
+        assert role["api_key"] != "sk-role-secret"
+
+        loaded = client.get("/api/settings").json()
+        assert loaded["llm"]["roles"]["counselor"]["model"] == "deepseek-chat"
+
+        connection = sqlite3.connect(TEST_DB)
+        raw = connection.execute(
+            "SELECT value FROM app_settings WHERE key = 'llm'"
+        ).fetchone()[0]
+        connection.close()
+        assert "sk-role-secret" not in raw
+
+        payload["llm"]["roles"]["counselor"] = {
+            "model": "deepseek-chat",
+            "temperature": 0.2,
+            "max_tokens": 512,
+            "top_p": 0.9,
+            "api_base": "https://role.example/v1",
+            "api_key": "",
+            "clear_api_key": True,
+        }
+        cleared = client.put("/api/settings", json=payload)
+        assert cleared.status_code == 200, cleared.text
+        cleared_role = cleared.json()["llm"]["roles"]["counselor"]
+        assert cleared_role["api_key_set"] is False
+        assert cleared_role["api_base"] == "https://role.example/v1"
+
+
+def test_role_model_endpoint_fallback() -> None:
+    from app.schemas.settings import LlmSettings, RoleModelConfig
+    from app.services.llm import role_model_config
+
+    llm = LlmSettings(
+        api_base="https://global.example/v1",
+        api_key="global-key",
+        default_model="default-model",
+        roles={
+            "counselor": RoleModelConfig(
+                model="role-model",
+                temperature=0.1,
+                max_tokens=256,
+                top_p=0.8,
+                api_base="https://role.example/v1",
+                api_key="role-key",
+            ),
+            "grader": RoleModelConfig(temperature=0.4),
+        },
+    )
+    counselor = role_model_config(llm, "counselor")
+    assert counselor.model == "role-model"
+    assert counselor.api_base == "https://role.example/v1"
+    assert counselor.api_key == "role-key"
+    assert counselor.max_tokens == 256
+    assert counselor.top_p == 0.8
+
+    grader = role_model_config(llm, "grader")
+    assert grader.model == "default-model"
+    assert grader.api_base == "https://global.example/v1"
+    assert grader.api_key == "global-key"
+    assert grader.temperature == 0.4
+
+
 async def test_asr_api_transcription(monkeypatch, tmp_path) -> None:
     from app.rag import asr
     from app.schemas.settings import LlmSettings
@@ -640,6 +742,136 @@ async def test_asr_unavailable_raises(tmp_path) -> None:
     except AsrUnavailable:
         return
     raise AssertionError("expected AsrUnavailable")
+
+
+def test_model_list_endpoint(monkeypatch) -> None:
+    from app.api import settings as settings_api
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self) -> dict:
+            return {
+                "data": [
+                    {"id": "qwen-plus", "owned_by": "aliyun"},
+                    {"id": "deepseek-chat", "owned_by": "deepseek"},
+                ]
+            }
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, headers=None):
+            assert url == "https://models.example/v1/models"
+            assert headers["Authorization"] == "Bearer test-key"
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        settings_api.httpx, "AsyncClient", lambda **kwargs: FakeClient()
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/settings/models",
+            json={
+                "api_base": "https://models.example/v1",
+                "api_key": "test-key",
+            },
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert [item["id"] for item in body["models"]] == [
+            "deepseek-chat",
+            "qwen-plus",
+        ]
+        assert body["count"] == 2
+
+
+def test_model_list_falls_back_to_v1(monkeypatch) -> None:
+    from app.api import settings as settings_api
+
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: object = None) -> None:
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self) -> object:
+            return self._payload
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, headers=None):
+            calls.append(url)
+            if url.endswith("/v1/models"):
+                return FakeResponse(200, ["model-a", "model-b"])
+            return FakeResponse(404)
+
+    monkeypatch.setattr(
+        settings_api.httpx, "AsyncClient", lambda **kwargs: FakeClient()
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/settings/models",
+            json={"api_base": "https://models.example", "api_key": "test-key"},
+        )
+        assert response.status_code == 200, response.text
+        assert calls == [
+            "https://models.example/models",
+            "https://models.example/v1/models",
+        ]
+        assert response.json()["base_url"].endswith("/v1/models")
+
+
+def test_model_list_rejects_bad_key(monkeypatch) -> None:
+    from app.api import settings as settings_api
+
+    class FakeResponse:
+        status_code = 401
+        text = "unauthorized"
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        settings_api.httpx, "AsyncClient", lambda **kwargs: FakeClient()
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/settings/models",
+            json={"api_base": "https://models.example/v1", "api_key": "bad"},
+        )
+        assert response.status_code == 400
+        assert "鉴权失败" in response.json()["detail"]
+
+
+def test_model_list_blocks_metadata_address() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/settings/models",
+            json={
+                "api_base": "http://169.254.169.254/latest",
+                "api_key": "test-key",
+            },
+        )
+        assert response.status_code == 400
+        assert "云元数据" in response.json()["detail"]
 
 
 

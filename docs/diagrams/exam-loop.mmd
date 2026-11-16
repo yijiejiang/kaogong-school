@@ -1,0 +1,14 @@
+flowchart LR
+  Bank[("题库 89+ 题")] --> Generate["组卷"]
+  AI["AI 原创题<br/>校验后入库"] --> Generate
+  Generate --> Take["限时作答<br/>自动保存 / 倒计时"]
+  Take --> Grade{"判分"}
+  Grade -->|客观题| G1["精确匹配"]
+  Grade -->|主观题| G2["评分细则踩点<br/>LLM grader / 关键词回退"]
+  G1 & G2 --> Report["报告<br/>得分 / 解析 / 举一反三"]
+  Report --> Mastery["掌握度 v2<br/>难度加权 / 置信度 / 时间衰减"]
+  Report --> Errors[("错题本")]
+  Mastery --> Plan["周计划 / 复习到期"]
+  Mastery --> Dashboard["学情看板 / 周报"]
+  Plan --> Notify["每日提醒 / 周报通知"]
+  Report --> GraderChat["改卷老师对话"]

@@ -1,0 +1,20 @@
+flowchart TB
+  subgraph Local["Mac 本地（默认）"]
+    L1["Next.js :3000"]
+    L2["FastAPI :8000"]
+    L3[("SQLite<br/>data/uploads")]
+    L4["launchd 常驻"]
+  end
+
+  subgraph Cloud["Cloud Run（可选）"]
+    C1["Docker 镜像<br/>FastAPI"]
+    C2[("Cloud SQL<br/>PostgreSQL")]
+  end
+
+  IOS["SwiftUI iOS"]
+  IOS --> L2
+  IOS --> C1
+  L1 --> L2
+  L2 --> L3
+  L4 --> L2
+  C1 --> C2

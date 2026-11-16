@@ -39,11 +39,14 @@ async def lifespan(app: FastAPI):
         await seed_knowledge_tree(db)
         await seed_question_bank(db)
     await recover_stale_jobs()
-    scheduler = asyncio.create_task(notification_loop())
+    scheduler = (
+        asyncio.create_task(notification_loop()) if cfg.enable_scheduler else None
+    )
     yield
-    scheduler.cancel()
-    with suppress(asyncio.CancelledError):
-        await scheduler
+    if scheduler is not None:
+        scheduler.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler
 
 
 app = FastAPI(title="考公私塾 API", version="0.1.0", lifespan=lifespan)

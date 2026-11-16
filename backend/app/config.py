@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     default_user_id: str = "local-user"
     mock_llm: bool = False
+    enable_scheduler: bool = True
 
     llm_api_base: str = ""
     llm_api_key: str = ""

@@ -13,6 +13,7 @@ import type {
   KnowledgeNode,
   Material,
   MaterialDetail,
+  ModelListResult,
   NotificationItem,
   NotificationList,
   PlanTask,
@@ -93,10 +94,26 @@ export type TestResult = {
 
 export async function testLlm(
   llm: SettingsPayload["llm"],
+  role?: string,
 ): Promise<TestResult> {
   return request("/api/settings/test", {
     method: "POST",
-    body: JSON.stringify({ llm }),
+    body: JSON.stringify({ llm, role: role ?? null }),
+  });
+}
+
+export async function fetchModels(payload: {
+  api_base?: string;
+  api_key?: string;
+  role?: string;
+}): Promise<ModelListResult> {
+  return request("/api/settings/models", {
+    method: "POST",
+    body: JSON.stringify({
+      api_base: payload.api_base ?? "",
+      api_key: payload.api_key ?? "",
+      role: payload.role ?? null,
+    }),
   });
 }
 

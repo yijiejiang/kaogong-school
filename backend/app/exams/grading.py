@@ -23,7 +23,7 @@ from app.db.models import (
     utcnow,
 )
 from app.schemas.settings import LlmSettings
-from app.services.llm import normalize_model, resolve_role_model
+from app.services.llm import normalize_model, role_model_config
 from app.services.settings_service import load_llm_settings
 
 logger = logging.getLogger(__name__)
@@ -212,8 +212,8 @@ async def _grade_short_with_llm(
 ) -> tuple[float, list[dict], list[str], str] | None:
     if get_settings().mock_llm:
         return None
-    model_name = resolve_role_model(llm, "grader")
-    if not model_name:
+    endpoint = role_model_config(llm, "grader")
+    if not endpoint.model:
         return None
 
     try:
@@ -231,21 +231,26 @@ async def _grade_short_with_llm(
 {{"score": number, "hit_points": [{{"point": "...", "evidence": "..."}}], "missed_points": ["..."], "comment": "..."}}"""
 
     try:
+        kwargs: dict = {
+            "model": normalize_model(endpoint.model),
+            "api_base": endpoint.api_base or None,
+            "api_key": endpoint.api_key or None,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是严谨的考公阅卷老师，只输出 JSON。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }
+        if endpoint.max_tokens > 0:
+            kwargs["max_tokens"] = endpoint.max_tokens
+        if 0 < endpoint.top_p <= 1:
+            kwargs["top_p"] = endpoint.top_p
         completion = await asyncio.wait_for(
-            acompletion(
-                model=normalize_model(model_name),
-                api_base=llm.api_base or None,
-                api_key=llm.api_key or None,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是严谨的考公阅卷老师，只输出 JSON。",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0,
-                response_format={"type": "json_object"},
-            ),
+            acompletion(**kwargs),
             timeout=45,
         )
         content = completion.choices[0].message.content or ""

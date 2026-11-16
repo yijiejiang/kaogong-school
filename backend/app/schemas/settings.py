@@ -24,6 +24,21 @@ ROLE_LABELS = {
 class RoleModelConfig(BaseModel):
     model: str = ""
     temperature: float = 0.3
+    max_tokens: int = 0
+    top_p: float = 0.0
+    api_base: str = ""
+    api_key: str = ""
+    clear_api_key: bool = False
+
+
+class RoleModelConfigPublic(BaseModel):
+    model: str = ""
+    temperature: float = 0.3
+    max_tokens: int = 0
+    top_p: float = 0.0
+    api_base: str = ""
+    api_key: str = ""
+    api_key_set: bool = False
 
 
 class LlmSettings(BaseModel):
@@ -31,7 +46,11 @@ class LlmSettings(BaseModel):
     api_key: str = ""
     default_model: str = ""
     embedding_model: str = ""
+    embedding_api_base: str = ""
+    embedding_api_key: str = ""
     asr_model: str = ""
+    asr_api_base: str = ""
+    asr_api_key: str = ""
     input_price_per_m: float = 0.0
     output_price_per_m: float = 0.0
     roles: dict[str, RoleModelConfig] = Field(default_factory=dict)
@@ -43,10 +62,16 @@ class LlmSettingsPublic(BaseModel):
     api_key_set: bool = False
     default_model: str = ""
     embedding_model: str = ""
+    embedding_api_base: str = ""
+    embedding_api_key: str = ""
+    embedding_api_key_set: bool = False
     asr_model: str = ""
+    asr_api_base: str = ""
+    asr_api_key: str = ""
+    asr_api_key_set: bool = False
     input_price_per_m: float = 0.0
     output_price_per_m: float = 0.0
-    roles: dict[str, RoleModelConfig] = Field(default_factory=dict)
+    roles: dict[str, RoleModelConfigPublic] = Field(default_factory=dict)
 
 
 class ProfileSettings(BaseModel):

@@ -1,0 +1,58 @@
+flowchart TB
+  subgraph Clients["客户端"]
+    Web["Next.js Web<br/>对话 / 考试 / 资料库 / 学情 / 设置"]
+    IOS["SwiftUI iOS<br/>REST + SSE"]
+    PWA["PWA 安装壳"]
+  end
+
+  subgraph Edge["接入层 · FastAPI"]
+    SSE["SSE 对话<br/>/api/chat/stream"]
+    REST["REST API<br/>materials · exams · analytics · plan · settings · asr · notifications"]
+  end
+
+  subgraph Agents["Google ADK 多智能体"]
+    Counselor["辅导员 counselor<br/>主入口 / 分诊"]
+    Supervisor["学习督导 supervisor"]
+    Examiner["出卷老师 examiner"]
+    Grader["改卷老师 grader"]
+    Collector["资料搜集 collector"]
+    Organizer["资料整理 organizer"]
+    Knowledge["知识点整理 knowledge"]
+  end
+
+  subgraph Domain["领域服务"]
+    Ingest["资料入库流水线"]
+    RAG["混合检索 RAG"]
+    Exam["组卷 / 作答 / 判分"]
+    Learning["掌握度 / 周计划 / 周报"]
+    Usage["Token 用量与成本"]
+    ModelGateway["模型网关<br/>角色级 Base URL / Key / 参数"]
+  end
+
+  subgraph Data["数据与文件"]
+    DB[("SQLite / PostgreSQL")]
+    Uploads[("data/uploads")]
+    Index[("chunks 向量 + 关键词")]
+  end
+
+  subgraph External["外部能力"]
+    LLM["OpenAI 兼容 LLM<br/>OpenDesign / DeepSeek / GLM / Kimi ..."]
+    Embed["Embedding API"]
+    ASR["ASR API / faster-whisper"]
+    Search["Tavily 网页搜索"]
+    Media["yt-dlp 视频字幕 / 音频"]
+    OCR["macOS Vision / tesseract OCR"]
+  end
+
+  Web & IOS & PWA --> SSE & REST
+  SSE --> Agents
+  Agents --> Domain
+  REST --> Domain
+  Domain --> DB
+  Ingest --> Uploads
+  RAG --> Index
+  Ingest --> OCR & Media & ASR
+  Ingest --> Embed
+  Collector --> Search
+  ModelGateway --> LLM & Embed & ASR
+  Domain --> Usage --> DB

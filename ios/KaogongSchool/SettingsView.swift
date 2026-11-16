@@ -14,12 +14,21 @@ struct SettingsView: View {
     @State private var llmApiBase = ""
     @State private var defaultModel = ""
     @State private var embeddingModel = ""
+    @State private var embeddingApiBase = ""
+    @State private var embeddingApiKey = ""
+    @State private var embeddingKeySet = false
     @State private var asrModel = ""
+    @State private var asrApiBase = ""
+    @State private var asrApiKey = ""
+    @State private var asrKeySet = false
     @State private var inputPrice = 0.0
     @State private var outputPrice = 0.0
     @State private var apiKey = ""
     @State private var apiKeySet = false
     @State private var roles: [String: SettingsBundle.RoleConfig] = [:]
+    @State private var clearedRoles: Set<String> = []
+    @State private var modelOptions: [String] = []
+    @State private var modelLoading = false
     @State private var server: SettingsBundle.Server?
     @State private var loading = true
     @State private var saving = false
@@ -27,6 +36,27 @@ struct SettingsView: View {
     @State private var noticeIsError = false
 
     private let targets = ["国考", "省考", "事业单位", "选调生", "其他"]
+    private let roleKeys = [
+        "counselor",
+        "supervisor",
+        "examiner",
+        "collector",
+        "organizer",
+        "knowledge",
+        "grader",
+    ]
+
+    private var emptyRole: SettingsBundle.RoleConfig {
+        SettingsBundle.RoleConfig(
+            model: "",
+            temperature: 0.3,
+            maxTokens: 0,
+            topP: 0,
+            apiBase: "",
+            apiKey: "",
+            apiKeySet: false
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -73,6 +103,24 @@ struct SettingsView: View {
                     TextField("默认模型", text: $defaultModel)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    HStack {
+                        Button {
+                            Task { await fetchModels() }
+                        } label: {
+                            Label(
+                                modelLoading ? "获取中…" : "获取模型",
+                                systemImage: "arrow.clockwise"
+                            )
+                        }
+                        .disabled(modelLoading)
+                        if !modelOptions.isEmpty {
+                            Menu("从列表选择") {
+                                ForEach(modelOptions, id: \.self) { model in
+                                    Button(model) { defaultModel = model }
+                                }
+                            }
+                        }
+                    }
                     SecureField(
                         apiKeySet ? "已配置，留空保持不变" : "API Key",
                         text: $apiKey
@@ -80,9 +128,25 @@ struct SettingsView: View {
                     TextField("Embedding 模型（可选）", text: $embeddingModel)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    TextField("Embedding Base URL（可选）", text: $embeddingApiBase)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    SecureField(
+                        embeddingKeySet ? "Embedding Key 已配置" : "Embedding API Key（可选）",
+                        text: $embeddingApiKey
+                    )
                     TextField("语音转写模型（可选）", text: $asrModel)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    TextField("语音转写 Base URL（可选）", text: $asrApiBase)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    SecureField(
+                        asrKeySet ? "语音 Key 已配置" : "语音转写 API Key（可选）",
+                        text: $asrApiKey
+                    )
                     HStack {
                         Text("输入价 / 百万 token")
                         Spacer()
@@ -101,11 +165,25 @@ struct SettingsView: View {
                     }
                 }
 
-                if !roles.isEmpty {
-                    Section("角色模型") {
-                        ForEach(roles.keys.sorted(), id: \.self) { key in
-                            if let role = roles[key], !role.model.isEmpty {
-                                LabeledContent(roleName(key), value: role.model)
+                Section("角色模型") {
+                    ForEach(roleKeys, id: \.self) { key in
+                        NavigationLink {
+                            RoleEditorView(
+                                title: roleName(key),
+                                roleKey: key,
+                                role: Binding(
+                                    get: { roles[key] ?? emptyRole },
+                                    set: { roles[key] = $0 }
+                                ),
+                                onClearKey: { clearedRoles.insert(key) }
+                            )
+                        } label: {
+                            HStack {
+                                Text(roleName(key))
+                                Spacer()
+                                Text(roleSummary(key))
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.muted)
                             }
                         }
                     }
@@ -151,7 +229,13 @@ struct SettingsView: View {
             llmApiBase = bundle.llm.apiBase
             defaultModel = bundle.llm.defaultModel
             embeddingModel = bundle.llm.embeddingModel
+            embeddingApiBase = bundle.llm.embeddingApiBase
+            embeddingApiKey = ""
+            embeddingKeySet = bundle.llm.embeddingApiKeySet
             asrModel = bundle.llm.asrModel
+            asrApiBase = bundle.llm.asrApiBase
+            asrApiKey = ""
+            asrKeySet = bundle.llm.asrApiKeySet
             inputPrice = bundle.llm.inputPricePerM
             outputPrice = bundle.llm.outputPricePerM
             apiKeySet = bundle.llm.apiKeySet
@@ -159,6 +243,23 @@ struct SettingsView: View {
             roles = bundle.llm.roles
             server = bundle.server
             store.settings = bundle
+        } catch {
+            notice = error.localizedDescription
+            noticeIsError = true
+        }
+    }
+
+    private func fetchModels() async {
+        modelLoading = true
+        defer { modelLoading = false }
+        do {
+            modelOptions = try await APIClient.shared.availableModels(
+                apiBase: llmApiBase,
+                apiKey: apiKey,
+                role: nil
+            )
+            notice = "已获取 \(modelOptions.count) 个模型。"
+            noticeIsError = false
         } catch {
             notice = error.localizedDescription
             noticeIsError = true
@@ -175,21 +276,41 @@ struct SettingsView: View {
                     apiKey: apiKey,
                     defaultModel: defaultModel,
                     embeddingModel: embeddingModel,
+                    embeddingApiBase: embeddingApiBase,
+                    embeddingApiKey: embeddingApiKey,
                     asrModel: asrModel,
+                    asrApiBase: asrApiBase,
+                    asrApiKey: asrApiKey,
                     inputPricePerM: inputPrice,
                     outputPricePerM: outputPrice,
-                    roles: roles.mapValues {
-                        SettingsPayload.RolePayload(
-                            model: $0.model,
-                            temperature: $0.temperature
-                        )
-                    }
+                    roles: Dictionary(
+                        uniqueKeysWithValues: roles.map { key, role in
+                            (
+                                key,
+                                SettingsPayload.RolePayload(
+                                    model: role.model,
+                                    temperature: role.temperature,
+                                    maxTokens: role.maxTokens,
+                                    topP: role.topP,
+                                    apiBase: role.apiBase,
+                                    apiKey: role.apiKey,
+                                    clearApiKey: clearedRoles.contains(key)
+                                )
+                            )
+                        }
+                    )
                 ),
                 profile: profile
             )
             let bundle = try await APIClient.shared.saveSettings(payload)
             apiKey = ""
+            embeddingApiKey = ""
+            asrApiKey = ""
             apiKeySet = bundle.llm.apiKeySet
+            embeddingKeySet = bundle.llm.embeddingApiKeySet
+            asrKeySet = bundle.llm.asrApiKeySet
+            roles = bundle.llm.roles
+            clearedRoles.removeAll()
             server = bundle.server
             store.settings = bundle
             notice = "已保存。"
@@ -210,6 +331,122 @@ struct SettingsView: View {
         case "knowledge": return "知识点整理"
         case "grader": return "改卷老师"
         default: return key
+        }
+    }
+
+    private func roleSummary(_ key: String) -> String {
+        guard let role = roles[key] else { return "沿用默认" }
+        if role.apiBase.isEmpty == false
+            || role.apiKeySet
+            || role.maxTokens > 0
+            || role.topP > 0
+            || role.temperature != 0.3 {
+            return "已独立配置"
+        }
+        return role.model.isEmpty ? "沿用默认" : role.model
+    }
+}
+
+private struct RoleEditorView: View {
+    let title: String
+    let roleKey: String
+    @Binding var role: SettingsBundle.RoleConfig
+    let onClearKey: () -> Void
+
+    @State private var modelOptions: [String] = []
+    @State private var modelLoading = false
+    @State private var modelError: String?
+
+    var body: some View {
+        Form {
+            Section("模型") {
+                TextField("留空使用默认模型", text: $role.model)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                HStack {
+                    Button {
+                        Task { await fetchModels() }
+                    } label: {
+                        Label(
+                            modelLoading ? "获取中…" : "获取模型",
+                            systemImage: "arrow.clockwise"
+                        )
+                    }
+                    .disabled(modelLoading)
+                    if !modelOptions.isEmpty {
+                        Menu("从列表选择") {
+                            ForEach(modelOptions, id: \.self) { model in
+                                Button(model) { role.model = model }
+                            }
+                        }
+                    }
+                }
+                if let modelError {
+                    Text(modelError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+            Section("采样参数") {
+                HStack {
+                    Text("temperature")
+                    Spacer()
+                    TextField("0.3", value: $role.temperature, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+                HStack {
+                    Text("max_tokens")
+                    Spacer()
+                    TextField("0", value: $role.maxTokens, format: .number)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+                HStack {
+                    Text("top_p")
+                    Spacer()
+                    TextField("0", value: $role.topP, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+            }
+            Section("独立端点") {
+                TextField("Base URL（留空沿用全局）", text: $role.apiBase)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                SecureField(
+                    role.apiKeySet ? "已配置，留空保持不变" : "API Key（留空沿用全局）",
+                    text: $role.apiKey
+                )
+                if role.apiKeySet {
+                    Button("清除独立 Key", role: .destructive) {
+                        role.apiKey = ""
+                        role.apiKeySet = false
+                        onClearKey()
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func fetchModels() async {
+        modelLoading = true
+        modelError = nil
+        defer { modelLoading = false }
+        do {
+            modelOptions = try await APIClient.shared.availableModels(
+                apiBase: role.apiBase,
+                apiKey: role.apiKey,
+                role: roleKey
+            )
+        } catch {
+            modelError = error.localizedDescription
         }
     }
 }

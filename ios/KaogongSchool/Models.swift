@@ -2,8 +2,23 @@ import Foundation
 
 struct SettingsBundle: Decodable {
     struct RoleConfig: Decodable {
-        let model: String
-        let temperature: Double
+        var model: String
+        var temperature: Double
+        var maxTokens: Int
+        var topP: Double
+        var apiBase: String
+        var apiKey: String
+        var apiKeySet: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case model
+            case temperature
+            case maxTokens = "max_tokens"
+            case topP = "top_p"
+            case apiBase = "api_base"
+            case apiKey = "api_key"
+            case apiKeySet = "api_key_set"
+        }
     }
 
     struct LLM: Decodable {
@@ -12,7 +27,13 @@ struct SettingsBundle: Decodable {
         let apiKeySet: Bool
         let defaultModel: String
         let embeddingModel: String
+        let embeddingApiBase: String
+        let embeddingApiKey: String
+        let embeddingApiKeySet: Bool
         let asrModel: String
+        let asrApiBase: String
+        let asrApiKey: String
+        let asrApiKeySet: Bool
         let inputPricePerM: Double
         let outputPricePerM: Double
         let roles: [String: RoleConfig]
@@ -23,7 +44,13 @@ struct SettingsBundle: Decodable {
             case apiKeySet = "api_key_set"
             case defaultModel = "default_model"
             case embeddingModel = "embedding_model"
+            case embeddingApiBase = "embedding_api_base"
+            case embeddingApiKey = "embedding_api_key"
+            case embeddingApiKeySet = "embedding_api_key_set"
             case asrModel = "asr_model"
+            case asrApiBase = "asr_api_base"
+            case asrApiKey = "asr_api_key"
+            case asrApiKeySet = "asr_api_key_set"
             case inputPricePerM = "input_price_per_m"
             case outputPricePerM = "output_price_per_m"
             case roles
@@ -69,7 +96,11 @@ struct SettingsPayload: Encodable {
         let apiKey: String
         let defaultModel: String
         let embeddingModel: String
+        let embeddingApiBase: String
+        let embeddingApiKey: String
         let asrModel: String
+        let asrApiBase: String
+        let asrApiKey: String
         let inputPricePerM: Double
         let outputPricePerM: Double
         let roles: [String: RolePayload]
@@ -79,7 +110,11 @@ struct SettingsPayload: Encodable {
             case apiKey = "api_key"
             case defaultModel = "default_model"
             case embeddingModel = "embedding_model"
+            case embeddingApiBase = "embedding_api_base"
+            case embeddingApiKey = "embedding_api_key"
             case asrModel = "asr_model"
+            case asrApiBase = "asr_api_base"
+            case asrApiKey = "asr_api_key"
             case inputPricePerM = "input_price_per_m"
             case outputPricePerM = "output_price_per_m"
             case roles
@@ -89,6 +124,21 @@ struct SettingsPayload: Encodable {
     struct RolePayload: Encodable {
         let model: String
         let temperature: Double
+        let maxTokens: Int
+        let topP: Double
+        let apiBase: String
+        let apiKey: String
+        let clearApiKey: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case model
+            case temperature
+            case maxTokens = "max_tokens"
+            case topP = "top_p"
+            case apiBase = "api_base"
+            case apiKey = "api_key"
+            case clearApiKey = "clear_api_key"
+        }
     }
 
     let llm: LLMPayload

@@ -1,0 +1,15 @@
+flowchart LR
+  A["文件 / 图片 / 音频 / 视频 / 网页"] --> B{"类型"}
+  B -->|PDF / DOCX / TXT / Markdown| C["文档解析"]
+  B -->|PNG / JPG / WebP| D["OCR<br/>Vision / tesseract"]
+  B -->|MP3 / M4A / WAV / FLAC| E["语音转写<br/>ASR API / faster-whisper"]
+  B -->|Bilibili / YouTube| F["yt-dlp 字幕<br/>无字幕时转录音轨"]
+  B -->|http / https| G["网页抽取<br/>SSRF 防护"]
+  C & D & E & F & G --> H["清洗 + 结构分块"]
+  H --> I["知识点打标"]
+  I --> J{"Embedding 配置"}
+  J -->|未配置| K["本地 hash-384"]
+  J -->|已配置| L["OpenAI 兼容 Embedding API"]
+  K & L --> M[("chunks<br/>向量 + 关键词")]
+  M --> N["向量相似度 + 关键词混合检索"]
+  N --> O["带《资料名》/ 页码引用的回答"]

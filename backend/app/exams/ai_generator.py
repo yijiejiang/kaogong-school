@@ -9,7 +9,7 @@ import litellm
 
 from app.config import get_settings
 from app.schemas.settings import LlmSettings
-from app.services.llm import normalize_model, resolve_role_model
+from app.services.llm import normalize_model, role_model_config
 
 
 class AiGenerationError(RuntimeError):
@@ -185,8 +185,8 @@ async def generate_ai_questions(
             "本地演示模式不会调用 AI 命题。配置真实 LLM 后可使用 AI 原创题。"
         )
 
-    model_name = resolve_role_model(llm, "examiner") or llm.default_model.strip()
-    if not model_name:
+    endpoint = role_model_config(llm, "examiner")
+    if not endpoint.model:
         raise AiGenerationError("还没有配置出卷老师的模型，无法生成 AI 原创题。")
 
     messages = [
@@ -204,16 +204,18 @@ async def generate_ai_questions(
         },
     ]
     kwargs: dict = {
-        "model": normalize_model(model_name),
+        "model": normalize_model(endpoint.model),
         "messages": messages,
-        "temperature": 0.5,
-        "max_tokens": max(1200, count * 500),
+        "temperature": endpoint.temperature,
+        "max_tokens": endpoint.max_tokens or max(1200, count * 500),
         "timeout": 120,
     }
-    if llm.api_base.strip():
-        kwargs["api_base"] = llm.api_base.strip()
-    if llm.api_key.strip():
-        kwargs["api_key"] = llm.api_key.strip()
+    if endpoint.api_base:
+        kwargs["api_base"] = endpoint.api_base
+    if endpoint.api_key:
+        kwargs["api_key"] = endpoint.api_key
+    if 0 < endpoint.top_p <= 1:
+        kwargs["top_p"] = endpoint.top_p
 
     try:
         response = await litellm.acompletion(**kwargs)
@@ -249,5 +251,5 @@ async def generate_ai_questions(
         questions=questions,
         prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
         completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
-        model=model_name,
+        model=endpoint.model,
     )
