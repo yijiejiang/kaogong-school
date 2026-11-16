@@ -1,0 +1,31 @@
+name: kaogong-school
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: kaogong-postgres
+    environment:
+      POSTGRES_USER: kaogong
+      POSTGRES_PASSWORD: kaogong
+      POSTGRES_DB: kaogong
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaogong -d kaogong"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: kaogong-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
