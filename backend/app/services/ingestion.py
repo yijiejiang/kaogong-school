@@ -5,6 +5,8 @@ import json
 import logging
 import shutil
 import uuid
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -13,7 +15,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import DATA_DIR, SAMPLE_DIR, UPLOAD_DIR, get_settings
-from app.db.models import Chunk, Job, Material
+from app.db.models import Chunk, Job, KnowledgeUnit, Material
 from app.db.session import SessionLocal
 from app.rag.asr import (
     AUDIO_SUFFIXES,
@@ -25,6 +27,7 @@ from app.rag.asr import (
 )
 from app.rag.chunking import chunk_text
 from app.rag.embeddings import EmbeddingError, get_embedding_service
+from app.rag.extraction import extract_material_units
 from app.rag.index import TaggedChunk, replace_chunks
 from app.rag.parsers import (
     IMAGE_SUFFIXES,
@@ -37,8 +40,15 @@ from app.rag.parsers import (
     parse_file,
     sanitize_filename,
 )
-from app.rag.tagging import load_prepared_points, tag_text
+from app.rag.tagging import load_prepared_points, tag_text_multi
 from app.rag.video import fetch_video, is_video_url
+from app.rag.video_slides import (
+    VideoSlidesError,
+    analyze_video,
+    clear_frames,
+    slide_chunks,
+)
+from app.services.deepseek_tools import resolve_config as resolve_deepseek
 from app.services.settings_service import load_llm_settings
 
 logger = logging.getLogger(__name__)
@@ -55,6 +65,17 @@ ALLOWED_SUFFIXES = {
 SAMPLE_FILENAME = "资料分析速算.md"
 
 _tasks: set[asyncio.Task] = set()
+
+
+@dataclass
+class RawChunk:
+    content: str
+    heading: str = ""
+    heading_path: str = ""
+    page: int | None = None
+    time_start: float | None = None
+    time_end: float | None = None
+    frame_path: str = ""
 
 
 def resolve_upload_path(relative: str) -> Path:
@@ -191,24 +212,60 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
             await db.commit()
 
             llm = await load_llm_settings(db)
+            deepseek = resolve_deepseek(llm)
+            slide_items: list[dict] | None = None
             if material.kind == "url":
-                parsed = await fetch_url(material.source_url, settings.max_url_bytes)
+                parsed = await fetch_url(
+                    material.source_url, settings.max_url_bytes, deepseek
+                )
             elif material.kind == "video":
                 transcriber = (
-                    transcribe_video_url if asr_ready(llm) else None
+                    partial(transcribe_video_url, llm=llm)
+                    if asr_ready(llm)
+                    else None
                 )
-                parsed = await fetch_video(
-                    material.source_url,
-                    settings.max_url_bytes,
-                    transcriber=transcriber,
-                )
+                clear_frames(material.id)
+                try:
+                    analysis = await analyze_video(
+                        material.source_url,
+                        material.id,
+                        llm,
+                        settings.max_url_bytes,
+                        transcriber=transcriber,
+                    )
+                    slide_items = slide_chunks(analysis)
+                    text = "\n\n".join(
+                        item["content"] for item in slide_items
+                    )
+                    parsed = ParsedDocument(
+                        title=analysis.title,
+                        text=text,
+                        pages=[(1, text)],
+                        kind="video",
+                        mime_type="text/vtt",
+                        warning=analysis.warning,
+                    )
+                except VideoSlidesError as exc:
+                    parsed = await fetch_video(
+                        material.source_url,
+                        settings.max_url_bytes,
+                        transcriber=transcriber,
+                    )
+                    parsed.warning = "；".join(
+                        item
+                        for item in (
+                            f"逐页解析失败，已回退字幕/语音稿：{exc}",
+                            parsed.warning,
+                        )
+                        if item
+                    )
             elif material.kind == "audio":
                 path = resolve_upload_path(material.file_path)
                 if not path.exists():
                     raise ParseError("原始音频不存在，请重新上传。")
                 try:
                     result = await transcribe_file(
-                        path, llm, filename=material.filename
+                        path, llm, filename=material.filename, deepseek=deepseek
                     )
                 except AsrUnavailable as exc:
                     raise ParseError(str(exc)) from exc
@@ -227,7 +284,11 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                 if not path.exists():
                     raise ParseError("原始文件不存在，请重新上传。")
                 parsed = await asyncio.to_thread(
-                    parse_file, path, material.filename, material.mime_type
+                    parse_file,
+                    path,
+                    material.filename,
+                    material.mime_type,
+                    deepseek,
                 )
 
             if parsed.title.strip():
@@ -237,45 +298,94 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
             job.message = "切分内容"
             await db.commit()
 
-            prepared = await load_prepared_points(db)
-            tagged: list[TaggedChunk] = []
-            if len(parsed.pages) > 1:
+            raw_chunks: list[RawChunk] = []
+            if slide_items is not None:
+                raw_chunks = [
+                    RawChunk(
+                        content=item["content"],
+                        heading=item["heading"],
+                        heading_path=item["heading_path"],
+                        page=item.get("page"),
+                        time_start=item.get("time_start"),
+                        time_end=item.get("time_end"),
+                        frame_path=item.get("frame_path", ""),
+                    )
+                    for item in slide_items
+                ]
+            elif len(parsed.pages) > 1:
                 for page_number, page_text in parsed.pages:
                     for item in chunk_text(
                         page_text, settings.chunk_size, settings.chunk_overlap
                     ):
-                        tagged.append(
-                            TaggedChunk(
+                        raw_chunks.append(
+                            RawChunk(
                                 content=item.content,
                                 heading=item.heading,
+                                heading_path=item.heading_path,
                                 page=page_number,
-                                tag=tag_text(item.content, prepared),
                             )
                         )
             else:
                 for item in chunk_text(
                     parsed.text, settings.chunk_size, settings.chunk_overlap
                 ):
-                    tagged.append(
-                        TaggedChunk(
+                    raw_chunks.append(
+                        RawChunk(
                             content=item.content,
                             heading=item.heading,
+                            heading_path=item.heading_path,
                             page=item.page,
-                            tag=tag_text(item.content, prepared),
                         )
                     )
 
-            if not tagged:
+            if not raw_chunks:
                 raise ParseError("没有提取到可索引的文本。")
-            if len(tagged) > 1000:
-                tagged = tagged[:1000]
+            raw_chunks = raw_chunks[:1000]
 
-            job.progress = 0.45
+            job.progress = 0.4
             job.message = "生成向量"
             await db.commit()
 
             embedder = get_embedding_service(llm)
-            embeddings = await embedder.embed([item.content for item in tagged])
+            embeddings = await embedder.embed(
+                [item.content for item in raw_chunks]
+            )
+
+            prepared = await load_prepared_points(db)
+            point_embeddings: dict[str, list[float]] = {}
+            if prepared:
+                profiles = [
+                    item.profile or item.point.name for item in prepared
+                ]
+                vectors = await embedder.embed(profiles)
+                point_embeddings = {
+                    item.point.id: vector
+                    for item, vector in zip(prepared, vectors, strict=False)
+                }
+
+            job.progress = 0.65
+            job.message = "知识点打标"
+            await db.commit()
+
+            tagged = [
+                TaggedChunk(
+                    content=item.content,
+                    heading=item.heading,
+                    heading_path=item.heading_path,
+                    page=item.page,
+                    time_start=item.time_start,
+                    time_end=item.time_end,
+                    frame_path=item.frame_path,
+                    tag=tag_text_multi(
+                        item.content,
+                        prepared,
+                        heading=item.heading_path or item.heading,
+                        embedding=vector,
+                        point_embeddings=point_embeddings,
+                    ),
+                )
+                for item, vector in zip(raw_chunks, embeddings, strict=False)
+            ]
 
             job.progress = 0.8
             job.message = "写入索引"
@@ -284,20 +394,61 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
             count = await replace_chunks(
                 db, material, tagged, embeddings, embedder.name
             )
+
+            extraction = {
+                "units": 0,
+                "skills": 0,
+                "new_skills": 0,
+                "proposals": 0,
+                "model": "",
+                "warning": "",
+            }
+            if settings.enable_knowledge_extraction:
+                job.progress = 0.9
+                job.message = "抽取知识单元"
+                await db.commit()
+                try:
+                    extraction = await extract_material_units(
+                        db, material.id, llm
+                    )
+                except Exception as exc:
+                    logger.exception("knowledge extraction failed")
+                    extraction["warning"] = (
+                        f"知识抽取失败：{str(exc)[:180]}"
+                    )
+
             material.status = "ready"
             material.error = ""
             job.status = "done"
             job.progress = 1.0
+            warnings = [
+                item
+                for item in (parsed.warning, extraction.get("warning", ""))
+                if item
+            ]
+            slide_count = len(slide_items or [])
             job.message = (
-                f"已索引 {count} 个分块。{parsed.warning}"
-                if parsed.warning
-                else f"已索引 {count} 个分块。"
+                f"已索引 {count} 个分块，抽取 {extraction['units']} 个知识单元。"
+                + (
+                    f" 发现 {extraction['proposals']} 个新知识点候选。"
+                    if extraction.get("proposals")
+                    else ""
+                )
+                + (f" 视频幻灯片 {slide_count} 页。" if slide_count else "")
+                + (" " + " ".join(warnings) if warnings else "")
             )
             job.result_json = json.dumps(
                 {
                     "chunk_count": count,
+                    "video_slides": slide_count,
                     "embedding_model": embedder.name,
+                    "knowledge_units": extraction["units"],
+                    "knowledge_proposals": extraction.get("proposals", 0),
+                    "skills": extraction["skills"],
+                    "new_skills": extraction["new_skills"],
+                    "extraction_model": extraction.get("model", ""),
                     "warning": parsed.warning,
+                    "extraction_warning": extraction.get("warning", ""),
                 },
                 ensure_ascii=False,
             )
@@ -352,6 +503,7 @@ async def reindex_material(db: AsyncSession, material_id: str) -> Material:
         raise ParseError("资料正在入库，请稍后再试。")
 
     await db.execute(delete(Chunk).where(Chunk.material_id == material_id))
+    clear_frames(material_id)
     material.status = "pending"
     material.error = ""
     material.chunk_count = 0
@@ -366,12 +518,16 @@ async def delete_material(db: AsyncSession, material_id: str) -> bool:
         return False
 
     await db.execute(delete(Chunk).where(Chunk.material_id == material_id))
+    await db.execute(
+        delete(KnowledgeUnit).where(KnowledgeUnit.material_id == material_id)
+    )
     await db.delete(material)
     await db.commit()
 
     folder = UPLOAD_DIR / material_id
     if folder.exists():
         await asyncio.to_thread(shutil.rmtree, folder, True)
+    clear_frames(material_id)
     return True
 
 

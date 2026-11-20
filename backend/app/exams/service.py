@@ -21,6 +21,7 @@ from app.db.models import (
 from app.exams.ai_generator import AiGenerationError, generate_ai_questions
 from app.exams.grading import grade_attempt
 from app.schemas.settings import LlmSettings
+from app.services.skill_matching import load_skill_index, match_skills
 from app.services.usage import record_usage
 
 
@@ -167,6 +168,21 @@ async def generate_exam(
     rng.shuffle(selected)
     if not selected:
         raise ExamError("题库还没有可用题目。")
+
+    skill_index = await load_skill_index(db)
+    for question in selected:
+        if question.skill_id:
+            continue
+        matches = match_skills(
+            f"{question.stem}\n{question.explanation}",
+            question.knowledge_point_id,
+            skill_index,
+            1,
+        )
+        if matches:
+            question.skill_id = matches[0]["id"]
+            question.skill_name = matches[0]["name"]
+    await db.flush()
 
     exam = Exam(
         id=uuid.uuid4().hex,

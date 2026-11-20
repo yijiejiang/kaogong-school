@@ -7,10 +7,13 @@ import type {
   AttemptState,
   AttemptSummary,
   ChatMessage,
+  ConnectInfo,
   ExamConfig,
   ExamSummary,
   ExamTake,
+  ExtractionResult,
   KnowledgeNode,
+  KnowledgeUnit,
   Material,
   MaterialDetail,
   ModelListResult,
@@ -21,6 +24,9 @@ import type {
   SessionSummary,
   SettingsBundle,
   SettingsPayload,
+  Skill,
+  SkillDetail,
+  SkillMap,
   UsageSummary,
   WeekPlan,
   WeeklyReport,
@@ -28,6 +34,8 @@ import type {
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+export { API_BASE };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -117,6 +125,15 @@ export async function fetchModels(payload: {
   });
 }
 
+export async function fetchConnectInfo(): Promise<ConnectInfo> {
+  return request("/api/connect/info");
+}
+
+export function connectQrUrl(base?: string): string {
+  const query = base ? `?base=${encodeURIComponent(base)}` : "";
+  return `${API_BASE}/api/connect/qr.png${query}`;
+}
+
 export async function fetchMaterials(): Promise<Material[]> {
   return request("/api/materials");
 }
@@ -185,6 +202,107 @@ export async function searchMaterials(
 
 export async function fetchKnowledgeTree(): Promise<KnowledgeNode[]> {
   return request("/api/knowledge/tree");
+}
+
+export async function fetchKnowledgeUnits(options?: {
+  status?: string;
+  materialId?: string;
+  knowledgePointId?: string;
+  hasProposal?: boolean;
+  limit?: number;
+}): Promise<KnowledgeUnit[]> {
+  const params = new URLSearchParams();
+  if (options?.status) params.set("status", options.status);
+  if (options?.materialId) params.set("material_id", options.materialId);
+  if (options?.knowledgePointId) {
+    params.set("knowledge_point_id", options.knowledgePointId);
+  }
+  if (options?.hasProposal) params.set("has_proposal", "true");
+  params.set("limit", String(options?.limit ?? 100));
+  return request(`/api/knowledge/units?${params.toString()}`);
+}
+
+export async function updateKnowledgeUnit(
+  id: string,
+  payload: Partial<
+    Pick<
+      KnowledgeUnit,
+      | "title"
+      | "summary"
+      | "definition"
+      | "conditions"
+      | "steps"
+      | "pitfalls"
+      | "examples"
+      | "knowledge_point_id"
+      | "knowledge_point_name"
+      | "status"
+    >
+  >,
+): Promise<KnowledgeUnit> {
+  return request(`/api/knowledge/units/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchSkills(options?: {
+  status?: string;
+  knowledgePointId?: string;
+  limit?: number;
+}): Promise<Skill[]> {
+  const params = new URLSearchParams();
+  if (options?.status) params.set("status", options.status);
+  if (options?.knowledgePointId) {
+    params.set("knowledge_point_id", options.knowledgePointId);
+  }
+  params.set("limit", String(options?.limit ?? 100));
+  return request(`/api/knowledge/skills?${params.toString()}`);
+}
+
+export async function updateSkill(
+  id: string,
+  payload: Partial<Pick<Skill, "name" | "summary" | "status">>,
+): Promise<Skill> {
+  return request(`/api/knowledge/skills/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchSkillMap(userId = getUserId()): Promise<SkillMap> {
+  return request(
+    `/api/knowledge/skill-map?user_id=${encodeURIComponent(userId)}`,
+  );
+}
+
+export async function fetchSkillDetail(id: string): Promise<SkillDetail> {
+  return request(`/api/knowledge/skills/${encodeURIComponent(id)}`);
+}
+
+export async function createPointFromUnit(unitId: string): Promise<{
+  status: string;
+  knowledge_point: {
+    id: string;
+    name: string;
+    parent_id: string;
+    subject: string;
+    module: string;
+  };
+  unit: KnowledgeUnit;
+}> {
+  return request(
+    `/api/knowledge/units/${encodeURIComponent(unitId)}/create-point`,
+    { method: "POST" },
+  );
+}
+
+export async function extractMaterialUnits(
+  materialId: string,
+): Promise<ExtractionResult> {
+  return request(`/api/knowledge/extract/${encodeURIComponent(materialId)}`, {
+    method: "POST",
+  });
 }
 
 export async function generateExam(config: ExamConfig): Promise<ExamSummary> {

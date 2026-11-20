@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct SettingsView: View {
@@ -21,6 +22,9 @@ struct SettingsView: View {
     @State private var asrApiBase = ""
     @State private var asrApiKey = ""
     @State private var asrKeySet = false
+    @State private var deepseekApiBase = ""
+    @State private var deepseekApiKey = ""
+    @State private var deepseekKeySet = false
     @State private var inputPrice = 0.0
     @State private var outputPrice = 0.0
     @State private var apiKey = ""
@@ -29,6 +33,11 @@ struct SettingsView: View {
     @State private var clearedRoles: Set<String> = []
     @State private var modelOptions: [String] = []
     @State private var modelLoading = false
+    @State private var showScanner = false
+    @State private var showLLMAdvanced = false
+    @State private var loaded = false
+    @State private var connectionState: ConnectionState = .checking
+    @State private var history: [ConnectionRecord] = []
     @State private var server: SettingsBundle.Server?
     @State private var loading = true
     @State private var saving = false
@@ -72,9 +81,75 @@ struct SettingsView: View {
                         .onSubmit {
                             Task { await load() }
                         }
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(connectionState.color)
+                            .frame(width: 8, height: 8)
+                        Text(connectionState.title)
+                            .font(.subheadline)
+                        Spacer()
+                        if case .connected(let latency) = connectionState {
+                            Text("\(latency) ms")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                        }
+                    }
+                    if case .failed(let message) = connectionState {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                    }
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Label("重新检测连接", systemImage: "waveform.path.ecg")
+                    }
+                    .disabled(loading)
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Label("扫码连接后端", systemImage: "qrcode.viewfinder")
+                    }
+                    LabeledContent("当前后端", value: apiBaseURL)
                     if let server {
                         LabeledContent("后端状态", value: server.mockMode ? "本地演示模式" : "真实模型")
                         LabeledContent("数据库", value: server.database)
+                    }
+                }
+
+                if !history.isEmpty {
+                    Section("连接历史") {
+                        ForEach(history) { record in
+                            Button {
+                                use(record)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(record.displayName)
+                                            .font(.subheadline)
+                                            .foregroundStyle(Theme.ink)
+                                        Text(record.detail)
+                                            .font(.caption2)
+                                            .foregroundStyle(Theme.muted)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer()
+                                    if record.url == apiBaseURL
+                                        && record.userId == userId {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(Theme.accent)
+                                    }
+                                }
+                            }
+                            .swipeActions {
+                                Button("删除", role: .destructive) {
+                                    history = ConnectionHistory.remove(
+                                        id: record.id
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -96,6 +171,26 @@ struct SettingsView: View {
                 }
 
                 Section("模型") {
+                    LabeledContent(
+                        "配置状态",
+                        value: server?.llmConfigured == true
+                            ? "已由服务端配置" : "未配置"
+                    )
+                    if !defaultModel.isEmpty {
+                        LabeledContent("默认模型", value: defaultModel)
+                    }
+                    Text("模型由后端统一配置，网页端修改后所有客户端自动生效。")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted)
+                    Button(
+                        showLLMAdvanced
+                            ? "收起高级模型配置"
+                            : "高级：修改服务端模型配置"
+                    ) {
+                        withAnimation { showLLMAdvanced.toggle() }
+                    }
+
+                    if showLLMAdvanced {
                     TextField("LLM Base URL（供应商）", text: $llmApiBase)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -147,6 +242,17 @@ struct SettingsView: View {
                         asrKeySet ? "语音 Key 已配置" : "语音转写 API Key（可选）",
                         text: $asrApiKey
                     )
+                    TextField("DeepSeek 官方 Base URL（可选）", text: $deepseekApiBase)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    SecureField(
+                        deepseekKeySet ? "DeepSeek Key 已配置" : "DeepSeek 官方 API Key（可选）",
+                        text: $deepseekApiKey
+                    )
+                    Text("DeepSeek 官方 Key 只用于联网搜索、扫描 PDF OCR 和短音频转写，不影响聊天模型。")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted)
                     HStack {
                         Text("输入价 / 百万 token")
                         Spacer()
@@ -163,27 +269,30 @@ struct SettingsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                     }
+                    }
                 }
 
-                Section("角色模型") {
-                    ForEach(roleKeys, id: \.self) { key in
-                        NavigationLink {
-                            RoleEditorView(
-                                title: roleName(key),
-                                roleKey: key,
-                                role: Binding(
-                                    get: { roles[key] ?? emptyRole },
-                                    set: { roles[key] = $0 }
-                                ),
-                                onClearKey: { clearedRoles.insert(key) }
-                            )
-                        } label: {
-                            HStack {
-                                Text(roleName(key))
-                                Spacer()
-                                Text(roleSummary(key))
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.muted)
+                if showLLMAdvanced {
+                    Section("角色模型") {
+                        ForEach(roleKeys, id: \.self) { key in
+                            NavigationLink {
+                                RoleEditorView(
+                                    title: roleName(key),
+                                    roleKey: key,
+                                    role: Binding(
+                                        get: { roles[key] ?? emptyRole },
+                                        set: { roles[key] = $0 }
+                                    ),
+                                    onClearKey: { clearedRoles.insert(key) }
+                                )
+                            } label: {
+                                HStack {
+                                    Text(roleName(key))
+                                    Spacer()
+                                    Text(roleSummary(key))
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.muted)
+                                }
                             }
                         }
                     }
@@ -212,16 +321,28 @@ struct SettingsView: View {
                     } label: {
                         if saving { ProgressView() } else { Text("保存") }
                     }
-                    .disabled(saving)
+                    .disabled(saving || !loaded)
                 }
             }
             .task { await load() }
             .refreshable { await load() }
+            .sheet(isPresented: $showScanner) {
+                QRConnectView { base in
+                    apiBaseURL = base
+                    notice = "已连接到 \(base)"
+                    noticeIsError = false
+                    Task { await load() }
+                }
+            }
         }
     }
 
     private func load() async {
         loading = true
+        loaded = false
+        connectionState = .checking
+        history = ConnectionHistory.load()
+        let started = Date()
         defer { loading = false }
         do {
             let bundle = try await APIClient.shared.settings()
@@ -236,6 +357,9 @@ struct SettingsView: View {
             asrApiBase = bundle.llm.asrApiBase
             asrApiKey = ""
             asrKeySet = bundle.llm.asrApiKeySet
+            deepseekApiBase = bundle.llm.deepseekApiBase
+            deepseekApiKey = ""
+            deepseekKeySet = bundle.llm.deepseekApiKeySet
             inputPrice = bundle.llm.inputPricePerM
             outputPrice = bundle.llm.outputPricePerM
             apiKeySet = bundle.llm.apiKeySet
@@ -243,10 +367,30 @@ struct SettingsView: View {
             roles = bundle.llm.roles
             server = bundle.server
             store.settings = bundle
+            loaded = true
+            connectionState = .connected(
+                latency: max(
+                    1,
+                    Int(Date().timeIntervalSince(started) * 1000)
+                )
+            )
+            history = ConnectionHistory.record(
+                url: apiBaseURL,
+                userId: userId
+            )
         } catch {
+            connectionState = .failed(error.localizedDescription)
             notice = error.localizedDescription
             noticeIsError = true
         }
+    }
+
+    private func use(_ record: ConnectionRecord) {
+        apiBaseURL = record.url
+        userId = record.userId
+        notice = "已切换到 \(record.displayName)"
+        noticeIsError = false
+        Task { await load() }
     }
 
     private func fetchModels() async {
@@ -267,8 +411,14 @@ struct SettingsView: View {
     }
 
     private func save() async {
+        guard loaded else {
+            notice = "设置尚未从服务端加载完成，请稍后再保存。"
+            noticeIsError = true
+            return
+        }
         saving = true
         defer { saving = false }
+        let started = Date()
         do {
             let payload = SettingsPayload(
                 llm: SettingsPayload.LLMPayload(
@@ -281,6 +431,8 @@ struct SettingsView: View {
                     asrModel: asrModel,
                     asrApiBase: asrApiBase,
                     asrApiKey: asrApiKey,
+                    deepseekApiBase: deepseekApiBase,
+                    deepseekApiKey: deepseekApiKey,
                     inputPricePerM: inputPrice,
                     outputPricePerM: outputPrice,
                     roles: Dictionary(
@@ -306,16 +458,29 @@ struct SettingsView: View {
             apiKey = ""
             embeddingApiKey = ""
             asrApiKey = ""
+            deepseekApiKey = ""
             apiKeySet = bundle.llm.apiKeySet
             embeddingKeySet = bundle.llm.embeddingApiKeySet
             asrKeySet = bundle.llm.asrApiKeySet
+            deepseekKeySet = bundle.llm.deepseekApiKeySet
             roles = bundle.llm.roles
             clearedRoles.removeAll()
             server = bundle.server
             store.settings = bundle
+            connectionState = .connected(
+                latency: max(
+                    1,
+                    Int(Date().timeIntervalSince(started) * 1000)
+                )
+            )
+            history = ConnectionHistory.record(
+                url: apiBaseURL,
+                userId: userId
+            )
             notice = "已保存。"
             noticeIsError = false
         } catch {
+            connectionState = .failed(error.localizedDescription)
             notice = error.localizedDescription
             noticeIsError = true
         }
@@ -447,6 +612,34 @@ private struct RoleEditorView: View {
             )
         } catch {
             modelError = error.localizedDescription
+        }
+    }
+}
+
+private enum ConnectionState: Equatable {
+    case checking
+    case connected(latency: Int)
+    case failed(String)
+
+    var title: String {
+        switch self {
+        case .checking:
+            return "检测中…"
+        case .connected:
+            return "已连接"
+        case .failed:
+            return "连接失败"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .checking:
+            return .orange
+        case .connected:
+            return Theme.accent
+        case .failed:
+            return .red
         }
     }
 }

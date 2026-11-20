@@ -19,6 +19,7 @@ import { fetchAttemptReport } from "@/lib/api";
 import type {
   AttemptReport,
   ExamOption,
+  FeedbackSkill,
   FeedbackVariant,
   QuestionFeedback,
 } from "@/lib/types";
@@ -221,6 +222,53 @@ export default function ReportPage() {
           </section>
         )}
 
+        {(report.skill_changes?.length ?? 0) > 0 && (
+          <section className="mt-5 rounded-2xl border border-line bg-paper p-5">
+            <h2 className="text-base font-semibold">技能掌握度</h2>
+            <p className="mt-1 text-xs text-muted">
+              这次作答已经更新到对应技能；可到技能地图查看完整状态。
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {report.skill_changes?.map((change) => {
+                const up = change.after >= change.before;
+                return (
+                  <div
+                    key={change.skill_id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-line bg-white px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium text-ink">
+                        {change.skill_name}
+                      </div>
+                      <div className="mt-0.5 text-[9px] text-muted">
+                        累计作答 {change.attempts} 题
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 text-xs">
+                      <span className="text-muted">{change.before}</span>
+                      <span className="text-[#b3aa9c]">→</span>
+                      <span
+                        className={
+                          up
+                            ? "font-medium text-emerald-700"
+                            : "font-medium text-red-700"
+                        }
+                      >
+                        {change.after}
+                      </span>
+                      {up ? (
+                        <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+                      ) : (
+                        <TrendingDown className="h-3.5 w-3.5 text-red-600" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <section className="mt-5 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold">逐题报告</h2>
@@ -373,6 +421,10 @@ function FeedbackCard({
         <RubricBlock feedback={feedback} />
       )}
 
+      {feedback.skills?.length > 0 && (
+        <SkillInsight skills={feedback.skills} />
+      )}
+
       {feedback.variants.length > 0 && (
         <Variants variants={feedback.variants} />
       )}
@@ -439,6 +491,43 @@ function RubricBlock({ feedback }: { feedback: QuestionFeedback }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function SkillInsight({ skills }: { skills: FeedbackSkill[] }) {
+  return (
+    <div className="mt-3 rounded-xl border border-[#d9e4e0] bg-[#eef5f2] p-3 text-xs leading-6 text-[#2f5d50]">
+      <div className="flex items-center gap-1 font-medium">
+        <Lightbulb className="h-3.5 w-3.5" />
+        这题对应的技能
+      </div>
+      <div className="mt-2 space-y-2">
+        {skills.map((skill) => (
+          <div key={skill.id} className="rounded-lg bg-white/70 px-2.5 py-2">
+            <div className="font-medium text-ink">{skill.name}</div>
+            {skill.exam_patterns[0] && (
+              <div className="mt-0.5">怎么考：{skill.exam_patterns[0]}</div>
+            )}
+            {skill.signals.length > 0 && (
+              <div className="mt-0.5">
+                识别信号：{skill.signals.slice(0, 2).join("；")}
+              </div>
+            )}
+            {skill.steps.length > 0 && (
+              <div className="mt-0.5">
+                步骤：{skill.steps.slice(0, 2).join(" → ")}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <Link
+        href="/skills"
+        className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-[#2f5d50] underline-offset-2 hover:underline"
+      >
+        打开技能地图
+      </Link>
     </div>
   );
 }

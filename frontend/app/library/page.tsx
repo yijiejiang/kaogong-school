@@ -24,6 +24,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  API_BASE,
   deleteMaterial,
   fetchKnowledgeTree,
   fetchMaterial,
@@ -298,9 +299,16 @@ export default function LibraryPage() {
             返回对话
           </Link>
           <div className="text-sm font-semibold">资料库</div>
-          <Link href="/settings" className="text-xs text-muted">
-            设置
-          </Link>
+          <div className="flex items-center gap-4 text-xs text-muted">
+            <Link
+              href="/knowledge"
+              className="inline-flex items-center gap-1 font-medium text-ink"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              知识挖掘
+            </Link>
+            <Link href="/settings">设置</Link>
+          </div>
         </div>
       </header>
 
@@ -675,6 +683,7 @@ function MaterialRow({
 }
 
 function MaterialChunks({ detail }: { detail: MaterialDetail | null }) {
+  const [showAll, setShowAll] = useState(false);
   if (!detail) {
     return (
       <div className="flex items-center gap-2 border-t border-line bg-[#faf7f1] px-4 py-3 text-xs text-muted">
@@ -691,14 +700,31 @@ function MaterialChunks({ detail }: { detail: MaterialDetail | null }) {
         <span>{detail.chunks.length} 个</span>
       </div>
       <div className="space-y-2">
-        {detail.chunks.slice(0, 6).map((chunk) => (
+        {(showAll ? detail.chunks : detail.chunks.slice(0, 6)).map((chunk) => (
           <div
             key={chunk.id}
             className="rounded-lg border border-line bg-white p-3"
           >
             <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
               <span>#{chunk.chunk_index + 1}</span>
-              {chunk.page && <span>第 {chunk.page} 页</span>}
+              {chunk.page && (
+                <span>
+                  {detail.material.kind === "video"
+                    ? `幻灯片 ${chunk.page}`
+                    : `第 ${chunk.page} 页`}
+                </span>
+              )}
+              {chunk.time_start != null && (
+                <span className="rounded-full bg-[#eef5f2] px-1.5 py-0.5 text-[#2f5d50]">
+                  {formatVideoTime(chunk.time_start)}
+                  {chunk.time_end != null
+                    ? `–${formatVideoTime(chunk.time_end)}`
+                    : ""}
+                </span>
+              )}
+              <span className="rounded-full bg-[#f1ece2] px-1.5 py-0.5">
+                {chunkTypeLabel(chunk.chunk_type)}
+              </span>
               {chunk.knowledge_point_name && (
                 <span className="rounded-full bg-[#e6edf5] px-1.5 py-0.5 text-[#3f5f7f]">
                   {chunk.knowledge_point_name}
@@ -712,17 +738,45 @@ function MaterialChunks({ detail }: { detail: MaterialDetail | null }) {
                   {tag}
                 </span>
               ))}
+              {chunk.labels.length > 1 && (
+                <span className="text-[9px] text-[#a59d90]">
+                  +{chunk.labels.length - 1} 个候选标签
+                </span>
+              )}
             </div>
-            <p className="mt-1 line-clamp-3 text-[11px] leading-5 text-[#5f5a4d]">
-              {chunk.content}
-            </p>
+            <div className="mt-1 flex gap-3">
+              {chunk.frame_url && (
+                <img
+                  src={`${API_BASE}${chunk.frame_url}`}
+                  alt="视频关键帧"
+                  loading="lazy"
+                  className="h-16 w-28 shrink-0 rounded-md border border-line object-cover"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                {chunk.heading_path && (
+                  <div className="text-[9px] text-[#a59d90]">
+                    {chunk.heading_path}
+                  </div>
+                )}
+                <p className="mt-1 line-clamp-3 text-[11px] leading-5 text-[#5f5a4d]">
+                  {chunk.content}
+                </p>
+              </div>
+            </div>
           </div>
         ))}
       </div>
       {detail.chunks.length > 6 && (
-        <div className="mt-2 text-[10px] text-muted">
-          还有 {detail.chunks.length - 6} 个分块未显示
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          className="mt-3 w-full rounded-lg border border-line bg-white px-3 py-2 text-[10px] font-medium text-[#6b6459] transition hover:border-[#cfc4b5]"
+        >
+          {showAll
+            ? "收起分块"
+            : `展开全部 ${detail.chunks.length} 个分块`}
+        </button>
       )}
     </div>
   );
@@ -767,6 +821,14 @@ function SearchResults({ result }: { result: SearchResponse }) {
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
               {hit.page && <span>第 {hit.page} 页</span>}
+              {hit.time_start != null && (
+                <span className="rounded-full bg-[#eef5f2] px-1.5 py-0.5 text-[#2f5d50]">
+                  {formatVideoTime(hit.time_start)}
+                  {hit.time_end != null
+                    ? `–${formatVideoTime(hit.time_end)}`
+                    : ""}
+                </span>
+              )}
               {hit.knowledge_point_name && (
                 <span className="rounded-full bg-[#e6edf5] px-1.5 py-0.5 text-[#3f5f7f]">
                   {hit.knowledge_point_name}
@@ -779,6 +841,30 @@ function SearchResults({ result }: { result: SearchResponse }) {
       )}
     </div>
   );
+}
+
+function formatVideoTime(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours
+    ? `${hours}:${pad(minutes)}:${pad(secs)}`
+    : `${pad(minutes)}:${pad(secs)}`;
+}
+
+function chunkTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    method: "方法",
+    formula: "公式",
+    definition: "定义",
+    trap: "易错",
+    example: "例题",
+    question: "题目",
+    summary: "概述",
+  };
+  return labels[type] ?? "概述";
 }
 
 function kindLabel(kind: string): string {

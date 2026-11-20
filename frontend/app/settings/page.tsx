@@ -3,7 +3,9 @@
 import {
   ArrowLeft,
   CheckCircle2,
+  Copy,
   Loader2,
+  QrCode,
   RefreshCw,
   Save,
   ShieldCheck,
@@ -17,12 +19,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ROLE_OPTIONS } from "@/lib/agents";
 import {
+  connectQrUrl,
+  fetchConnectInfo,
   fetchModels,
   fetchSettings,
   saveSettings,
   testLlm,
 } from "@/lib/api";
 import type {
+  ConnectInfo,
   RoleModelConfig,
   SettingsBundle,
   SettingsPayload,
@@ -83,6 +88,8 @@ export default function SettingsPage() {
     asr_model: "",
     asr_api_base: "",
     asr_api_key: "",
+    deepseek_api_base: "",
+    deepseek_api_key: "",
     input_price_per_m: 0,
     output_price_per_m: 0,
     roles: emptyRoles,
@@ -106,6 +113,8 @@ export default function SettingsPage() {
   );
   const [modelLoading, setModelLoading] = useState<string | null>(null);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
+  const [connectInfo, setConnectInfo] = useState<ConnectInfo | null>(null);
+  const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<{
     kind: "success" | "error";
     text: string;
@@ -124,6 +133,8 @@ export default function SettingsPage() {
       asr_model: data.llm.asr_model ?? "",
       asr_api_base: data.llm.asr_api_base ?? "",
       asr_api_key: "",
+      deepseek_api_base: data.llm.deepseek_api_base ?? "",
+      deepseek_api_key: "",
       input_price_per_m: data.llm.input_price_per_m ?? 0,
       output_price_per_m: data.llm.output_price_per_m ?? 0,
       roles: Object.fromEntries(
@@ -153,6 +164,25 @@ export default function SettingsPage() {
   useEffect(() => {
     setUserIdDraft(userId);
   }, [userId]);
+
+  useEffect(() => {
+    fetchConnectInfo()
+      .then(setConnectInfo)
+      .catch(() => {
+        // The QR card falls back to the current API base.
+      });
+  }, []);
+
+  const copyConnectUrl = async () => {
+    if (!connectInfo) return;
+    try {
+      await navigator.clipboard.writeText(connectInfo.api_base);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
 
   const handleSwitchUser = async () => {
     const nextId = normalizeUserId(userIdDraft);
@@ -354,6 +384,92 @@ export default function SettingsPage() {
                 <UserRound className="h-3.5 w-3.5" />
                 切换学习者
               </button>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-line bg-paper p-5 sm:p-6">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-base font-semibold">
+                  <QrCode className="h-4 w-4 text-accent" />
+                  用 iPad / iPhone 扫码连接
+                </h2>
+                <p className="mt-1 text-xs text-muted">
+                  不用在平板上手输 IP。扫码后会打开 App 并自动填好后端地址。
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-[200px_1fr] sm:items-start">
+              <div className="w-fit rounded-2xl border border-line bg-white p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={connectQrUrl(connectInfo?.api_base)}
+                  alt="扫码连接考公私塾后端"
+                  className="h-44 w-44"
+                />
+              </div>
+
+              <div className="min-w-0 text-xs leading-5 text-muted">
+                <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-[#8a8475]">
+                  当前连接地址
+                  {connectInfo?.source === "public" && (
+                    <span className="ml-2 rounded-full bg-[#e1efe8] px-1.5 py-0.5 text-[9px] normal-case tracking-normal text-[#2f5d50]">
+                      PUBLIC_BASE_URL
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-lg border border-line bg-[#faf7f1] px-3 py-2 text-[11px] text-ink">
+                    {connectInfo?.api_base ?? "正在获取 Mac 的局域网地址…"}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => void copyConnectUrl()}
+                    disabled={!connectInfo}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-line bg-white px-2.5 py-2 text-[10px] font-medium text-ink transition hover:border-[#cfc4b5] disabled:opacity-50"
+                  >
+                    <Copy className="h-3 w-3" />
+                    {copied ? "已复制" : "复制"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void fetchConnectInfo().then(setConnectInfo)
+                    }
+                    title="刷新局域网地址"
+                    className="inline-flex shrink-0 items-center justify-center rounded-lg border border-line bg-white p-2 text-ink transition hover:border-[#cfc4b5]"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                  </button>
+                </div>
+
+                <ol className="mt-3 list-decimal space-y-1 pl-4">
+                  <li>
+                    {connectInfo?.source === "public"
+                      ? "当前二维码使用 PUBLIC_BASE_URL；iPad 需要能访问这个地址，例如已登录同一个 Tailscale，或通过 Cloudflare Access。"
+                      : "Mac 与 iPad 连接同一个 Wi-Fi，不要用访客网络。"}
+                  </li>
+                  <li>
+                    {connectInfo?.source === "public"
+                      ? "Tailscale / 反向代理需先把该域名转发到本机 8000 端口。"
+                      : "后端用 make backend-lan 启动（监听 0.0.0.0），否则平板无法访问。"}
+                  </li>
+                  <li>
+                    iPad 打开 App → 设置 → 扫码连接；也可以直接用系统相机扫码。
+                  </li>
+                  <li>
+                    仍连不上时，检查 macOS 防火墙是否允许 Python/uvicorn
+                    接受传入连接。
+                  </li>
+                </ol>
+
+                {connectInfo && connectInfo.ips.length > 1 && (
+                  <div className="mt-2 text-[10px] text-[#a59d90]">
+                    检测到的地址：{connectInfo.ips.join(" · ")}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
@@ -723,6 +839,60 @@ export default function SettingsPage() {
                 复用独立端点调用 /audio/transcriptions；留空时如果有
                 faster-whisper 会退回本地转写。
               </span>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-line bg-[#faf7f1] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-medium text-ink">
+                  DeepSeek 官方能力（可选）
+                </span>
+                {bundle?.llm.deepseek_api_key_set && (
+                  <span className="rounded-full bg-[#e1efe8] px-2 py-0.5 text-[10px] font-medium text-[#2f5d50]">
+                    已启用
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] leading-4 text-muted">
+                只用于联网搜索、网页抓取、扫描 PDF OCR 和短音频转写，不影响上面的聊天模型。
+                官方地址是 https://api.deepseek.com，接口为 /v1/tools/*。
+              </p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-ink">
+                    DeepSeek Base URL
+                  </span>
+                  <input
+                    className={fieldClass}
+                    value={llm.deepseek_api_base}
+                    onChange={(event) =>
+                      setLlm({
+                        ...llm,
+                        deepseek_api_base: event.target.value,
+                      })
+                    }
+                    placeholder="https://api.deepseek.com"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-ink">
+                    DeepSeek API Key
+                  </span>
+                  <input
+                    type="password"
+                    className={fieldClass}
+                    value={llm.deepseek_api_key}
+                    onChange={(event) =>
+                      setLlm({ ...llm, deepseek_api_key: event.target.value })
+                    }
+                    placeholder={
+                      bundle?.llm.deepseek_api_key_set
+                        ? "已配置，留空保持不变"
+                        : "sk-..."
+                    }
+                    autoComplete="off"
+                  />
+                </label>
+              </div>
             </div>
 
             <div className="mt-4 grid gap-3 rounded-xl border border-line bg-[#faf7f1] p-4 sm:grid-cols-2">

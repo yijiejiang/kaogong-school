@@ -106,6 +106,13 @@ async def load_llm_settings(db: AsyncSession) -> LlmSettings:
         asr_model=str(data.get("asr_model") or os.getenv("ASR_MODEL") or ""),
         asr_api_base=str(data.get("asr_api_base") or ""),
         asr_api_key=_read_secret(data, "asr_api_key_enc"),
+        deepseek_api_base=str(
+            data.get("deepseek_api_base")
+            or os.getenv("DEEPSEEK_API_BASE")
+            or ""
+        ),
+        deepseek_api_key=_read_secret(data, "deepseek_api_key_enc")
+        or os.getenv("DEEPSEEK_API_KEY", ""),
         input_price_per_m=float(data.get("input_price_per_m") or 0.0),
         output_price_per_m=float(data.get("output_price_per_m") or 0.0),
         roles=roles,
@@ -128,6 +135,12 @@ async def save_llm_settings(db: AsyncSession, llm: LlmSettings) -> LlmSettings:
         llm.embedding_api_key, current.embedding_api_key
     )
     asr_key = _merge_secret(llm.asr_api_key, current.asr_api_key)
+    deepseek_key = _merge_secret(
+        llm.deepseek_api_key, current.deepseek_api_key
+    )
+    deepseek_base = (
+        llm.deepseek_api_base.strip() or current.deepseek_api_base
+    )
 
     roles: dict[str, RoleModelConfig] = {}
     roles_payload: dict[str, dict] = {}
@@ -164,6 +177,8 @@ async def save_llm_settings(db: AsyncSession, llm: LlmSettings) -> LlmSettings:
         "asr_model": llm.asr_model.strip(),
         "asr_api_base": llm.asr_api_base.strip(),
         "asr_api_key_enc": encrypt_secret(asr_key),
+        "deepseek_api_base": deepseek_base,
+        "deepseek_api_key_enc": encrypt_secret(deepseek_key),
         "input_price_per_m": llm.input_price_per_m,
         "output_price_per_m": llm.output_price_per_m,
         "roles": roles_payload,
@@ -179,6 +194,8 @@ async def save_llm_settings(db: AsyncSession, llm: LlmSettings) -> LlmSettings:
         asr_model=payload["asr_model"],
         asr_api_base=payload["asr_api_base"],
         asr_api_key=asr_key,
+        deepseek_api_base=payload["deepseek_api_base"],
+        deepseek_api_key=deepseek_key,
         input_price_per_m=payload["input_price_per_m"],
         output_price_per_m=payload["output_price_per_m"],
         roles=roles,
@@ -231,6 +248,9 @@ def to_public(llm: LlmSettings) -> LlmSettingsPublic:
         asr_api_base=llm.asr_api_base,
         asr_api_key=mask_secret(llm.asr_api_key),
         asr_api_key_set=bool(llm.asr_api_key),
+        deepseek_api_base=llm.deepseek_api_base,
+        deepseek_api_key=mask_secret(llm.deepseek_api_key),
+        deepseek_api_key_set=bool(llm.deepseek_api_key),
         input_price_per_m=llm.input_price_per_m,
         output_price_per_m=llm.output_price_per_m,
         roles=roles,

@@ -4,9 +4,11 @@ import {
   BarChart3,
   FileText,
   Library,
+  Map as MapIcon,
   MessageSquare,
   Plus,
   Settings,
+  Sparkles,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -100,6 +102,20 @@ export function Sidebar({
           >
             <Library className="h-4 w-4" />
             资料库
+          </Link>
+          <Link
+            href="/knowledge"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-[#5f5a4d] transition hover:bg-[#e7e1d6]"
+          >
+            <Sparkles className="h-4 w-4" />
+            知识挖掘
+          </Link>
+          <Link
+            href="/skills"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-[#5f5a4d] transition hover:bg-[#e7e1d6]"
+          >
+            <MapIcon className="h-4 w-4" />
+            技能地图
           </Link>
           <Link
             href="/dashboard"

@@ -11,7 +11,7 @@
 - **P2 已接入**：题库与组卷、考试中心、限时答题、自动保存、客观题+主观题评分、举一反三、错题本、掌握度 v1、改卷老师对话解释。
 - **P3 已接入**：学情看板（雷达/趋势/热力图/薄弱点/覆盖度）、掌握度 v2、周计划与每日任务、周报、督导老师真实学情与计划生成。
 - **P4 已接入**：图片 OCR、视频字幕/语音转写、每日提醒/周报通知、PWA；图片/音频/视频入库。
-- **P4.5 已接入**：五模块题库与申论主观题、AI 原创题、按角色 token/成本看板、模型自动发现与按角色独立配置、本地多用户、launchd 常驻、Cloud Run 部署文件、SwiftUI iOS 客户端。
+- **P4.5 已接入**：五模块题库与申论主观题、AI 原创题、按角色 token/成本看板、模型自动发现与按角色独立配置、资料多标签打标与 chunk 类型、评测集、本地多用户、launchd 常驻、Cloud Run 部署文件、SwiftUI iOS 客户端。
 - **后续**：真实 LLM 全链路验收、对象存储、登录鉴权、多设备同步、语音对话与更完整的移动端。
 
 ## 技术栈
@@ -49,8 +49,22 @@ make frontend     # http://localhost:3000
 open ios/KaogongSchool.xcodeproj
 ```
 
-在 iOS「设置」里把后端地址改成 `http://127.0.0.1:8000`（模拟器）或
-`http://<Mac 局域网 IP>:8000`（真机，后端用 `make backend-lan` 启动）。
+iPad / iPhone 连接后端最简单的方式是扫码：
+
+1. Mac 与 iPad 连接同一个 Wi-Fi。
+2. 后端用 `make backend-lan` 启动（监听 `0.0.0.0`）。
+3. 打开网页端「设置 → 用 iPad / iPhone 扫码连接」，用 iPad 系统相机扫码，
+   或在 App 内「设置 → 扫码连接后端」扫码。
+4. 扫码会自动写入 `http://<Mac 局域网 IP>:8000`，不需要手输 IP。
+
+模拟器也可以直接使用 `http://127.0.0.1:8000`。真机连不上时，检查 macOS
+防火墙是否允许 Python/uvicorn 接受传入连接。
+
+外网访问（不在同一 Wi-Fi）推荐 Tailscale：Mac 和 iPad 登录同一个 tailnet，
+用 `tailscale serve` 暴露私有 HTTPS 地址，再设置 `PUBLIC_BASE_URL` 即可让二维码
+编码这个地址。完整步骤见 [deploy/tailscale.md](deploy/tailscale.md)。
+
+TestFlight 打包与上传步骤见 [deploy/testflight.md](deploy/testflight.md)。
 
 常驻运行（开机自启）：
 
@@ -137,7 +151,8 @@ P2 已完成 AI 原创题、多模块题库与图片/音频/视频入库；真�
 - **本地多用户**：设置页可切换学习者 ID；资料库共享，做题记录、掌握度、计划与通知按学习者隔离。
 - **常驻运行**：`make install-service` 用 launchd 开机自启后端，日志写到 `backend/data/logs/`。
 - **Cloud Run**：`backend/Dockerfile` + `deploy/cloudrun.md`，建议配 Cloud SQL PostgreSQL；本地上传目录仍需接对象存储。
-- **Swift iOS**：`ios/` 是原生 SwiftUI 客户端，支持对话流式、学情、考试、资料上传与设置。
+- **Swift iOS**：`ios/` 是原生 SwiftUI 客户端，支持对话流式、Markdown 渲染、学情、考试、资料上传与设置；设置页显示连接状态与连接历史，支持扫码连接后端。模型配置由服务端统一管理，iOS 默认不要求重复配置。
+- **远程访问**：`PUBLIC_BASE_URL` 可指向 Tailscale Serve 的私有 HTTPS 地址，二维码会优先使用它；局域网未配置时仍自动检测 Mac IP。
 
 ### 通知与常驻督导说明
 
@@ -158,6 +173,45 @@ P2 已完成 AI 原创题、多模块题库与图片/音频/视频入库；真�
 - **安全**：全局与角色的 API Key 都加密存储，接口只返回脱敏值；角色 Key 可一键清除。
 - **连通性测试**：全局和每个角色都有独立「测试」按钮，按该角色自己的端点和参数发起请求。
 
+## 资料库智能打标
+
+- **多标签**：每个分块保留 Top-3 候选知识点、分数和置信度，不再只取一个最佳标签。
+- **混合召回**：关键词命中 + 分块向量与知识点画像的相似度共同打分；知识点画像包含名称、描述、知识卡的 summary/methods/traps。
+- **chunk 类型**：method / formula / definition / trap / example / question / summary，按标题和正文线索分类。
+- **标题路径**：保留 `资料 > 章节 > 小节` 路径，例如「资料分析速算技巧 > 二、截位直除」。
+- **评测集**：`backend/evals/library_cases.json` 覆盖打标、类型和检索用例；运行 `cd backend && uv run python scripts/evaluate_library.py` 查看 Top-1、Top-3 召回、类型准确率和 Recall@5。
+- 旧资料需要点一次「重新索引」才会生成多标签、类型和标题路径；新资料入库时自动完成。
+
+## 视频幻灯片理解（MVP）
+
+视频链接入库时，除了字幕/语音稿，还会抽取画面并整理成逐页笔记：
+
+- **抽帧**：`ffmpeg` 按 2–8 秒采样（视频越长间隔越大，最多约 300 帧），避免逐帧处理。
+- **幻灯片识别**：macOS Vision OCR 每帧文字，用 dHash + 文本相似度合并连续相似画面，选出每页最完整的代表帧。
+- **时间对齐**：优先使用带时间戳的字幕；没有字幕时使用带时间戳的本地语音转写，再退化为按时间均分讲解稿。
+- **本地转写**：没有字幕的视频需要 `uv add faster-whisper`；默认使用 `small` 模型，可用 `ASR_LOCAL_MODEL=medium` 提升准确率，或在 `.env` 配置独立 ASR API。
+- **逐页总结**：知识角色模型为每页生成标题、摘要和要点；模型不可用时使用 OCR 首行和原文摘要兜底。
+- **入库与展示**：每个分块带 `time_start / time_end / frame_path`，资料库分块预览显示时间范围和关键帧缩略图；关键帧通过 `/api/materials/{id}/frames/{filename}` 提供。
+- **回退**：抽帧或幻灯片识别失败时，自动回退到原来的字幕/语音稿索引，不影响资料可用性。
+
+MVP 目前使用固定采样，不含镜头检测、动画合并和视觉模型图表理解；字幕缺失时讲解与画面的对齐是近似值。
+
+## 知识挖掘与审核
+
+- **入库自动抽取**：资料索引完成后，从方法 / 公式 / 定义 / 陷阱 / 例题分块中抽取知识单元（标题、定义、适用条件、步骤、易错点、例子、原文依据）。
+- **深度洞察**：每个知识单元/技能还会整理「怎么考、题目识别信号、常见变式、出题人怎么设干扰、关联知识点」。
+- **LLM + 规则双通道**：知识角色配置了模型时按每批 4 个分块调用 LLM；输出被截断时自动二分重试，未覆盖的片段用规则抽取补齐；`ENABLE_KNOWLEDGE_EXTRACTION=0` 可关闭。
+- **技能聚类**：同一知识点下的知识单元按技能名归一化合并为技能，聚合步骤、易错点、考法、变式和来源单元。
+- **新知识点候选**：抽取时如果发现现有知识树没覆盖的新考点，会写入「新知识点候选」；在「知识挖掘 → 新知识点」里一键挂到父级知识点下。
+- **技能地图**：侧边栏「技能地图」按科目/模块展示每项技能的掌握状态（熟练/会用/了解/不清楚/待复习），点开可看考法、识别信号、步骤、易错点、变式和来源资料。
+- **技能级掌握度**：出卷时为题目匹配 `skill_id`，交卷后按题目更新 `skill_mastery`；技能地图优先显示真实技能练习数据，没有技能数据时回退到知识点掌握度并标注「知识点估算」。
+- **试卷报告**：逐题报告显示对应技能和技能掌握变化，改卷老师也可以按技能解释错题。
+- **知识老师**：回答时按「是什么 → 怎么识别 → 标准步骤 → 易错点 → 怎么考 → 变式/关联」组织，并可通过 `find_skills` / `get_skill_detail` / `get_skill_overview` 查技能地图。
+- **审核流**：知识单元和技能都有 `draft / approved / rejected` 状态，可在「知识挖掘」页编辑、通过、驳回、退回。
+- **重新抽取**：资料重新索引会清空该资料的旧单元；审核页可对单份资料手动重新抽取。
+- **入口**：侧边栏「知识挖掘」或资料库右上角；预览默认只看待审核内容。
+- PDF 解析会去除重复页眉页脚、水印、页码和目录点线，并识别「一、」「6.3」等中文标题层级；旧资料需重新索引后生效。
+
 ## Embedding 与检索
 
 - **不填 Embedding 模型**：使用 `hash-384` 本地哈希向量，不需要 Key，适合演示和中小资料库。
@@ -165,16 +219,21 @@ P2 已完成 AI 原创题、多模块题库与图片/音频/视频入库；真�
   调用 OpenAI 兼容的 Embedding API。更换模型后请到资料库点“重新索引”。
 - 检索分数 = 向量相似度 + 关键词命中；回答会引用《资料名》与页码（如 PDF 有页码）。
 
-## 网页搜索
+## 联网搜索与 DeepSeek 官方能力
 
-资料搜集 Agent 的 `web_search` 需要 Tavily：
+资料搜集 Agent 的 `web_search` / `read_web_page` 优先使用 DeepSeek 官方 Search / Fetch 接口；没有配置时回退 Tavily：
 
-```bash
-# backend/.env
-TAVILY_API_KEY=你的_key
-```
+- **DeepSeek 官方能力**：设置页「DeepSeek 官方能力（可选）」填官方 Base URL 和 Key（默认 `https://api.deepseek.com`），或写 `backend/.env` 的 `DEEPSEEK_API_KEY`。
+- **Tavily 兜底**：`backend/.env` 中配 `TAVILY_API_KEY=你的_key`。
+- 两者都没有时，工具会明确返回“暂时不能进行网页搜索”，不会编造结果。
 
-未配置时会明确返回“暂时不能进行网页搜索”，不会编造结果。
+DeepSeek 官方 Key 还用于：
+
+- **扫描版 PDF OCR**：PyMuPDF 提取不到文字的 PDF 会调用 `/v1/tools/ocr` 逐页识别；图片仍优先用 macOS Vision，识别为空时再调官方 OCR。
+- **短音频转写**：≤ 8 MB 的音频优先走 `/v1/tools/asr`，失败或超限时回退到已配置的 ASR 端点或本地 faster-whisper。
+- **日期元信息**：每个 Agent 的指令会带上当前日期与星期，计划和倒计时不再依赖模型猜测。
+
+这些接口与聊天模型相互独立，不会改变当前聊天/出卷/改卷使用的代理模型。
 
 ## 主要 API
 
@@ -188,11 +247,20 @@ POST /api/materials/import-url    导入网页
 POST /api/materials/seed-sample   导入内置示例资料
 GET  /api/materials               资料列表
 GET  /api/materials/{id}          资料详情 + 分块
+GET  /api/materials/{id}/frames/{filename} 视频关键帧图片
 POST /api/materials/{id}/reindex  重新索引
 DELETE /api/materials/{id}        删除资料
 POST /api/search                  资料库检索
 GET  /api/knowledge/tree          知识树
 GET  /api/knowledge/cards/{kp_id} 知识卡片
+GET  /api/knowledge/units         知识单元（可按 status/material_id/knowledge_point_id 过滤）
+PATCH /api/knowledge/units/{id}   编辑或审核知识单元
+GET  /api/knowledge/skills        技能列表
+GET  /api/knowledge/skills/{id}   技能详情 + 来源单元
+PATCH /api/knowledge/skills/{id}  编辑或审核技能
+GET  /api/knowledge/skill-map     个人技能地图（按科目/模块聚合掌握度）
+POST /api/knowledge/units/{id}/create-point 把新知识点候选落到知识树
+POST /api/knowledge/extract/{material_id} 重新抽取资料的知识单元
 
 POST /api/exams/generate          按条件生成试卷
 GET  /api/exams                   试卷列表
@@ -219,6 +287,8 @@ GET  /api/asr/status              语音转写是否可用
 POST /api/asr/transcribe          音频转文字
 
 GET  /api/users                   本地学习者列表
+GET  /api/connect/info            局域网地址与扫码 payload
+GET  /api/connect/qr.png          连接二维码
 GET/PUT /api/settings             LLM / Embedding / ASR / 单价 / 学习档案
 POST /api/settings/models         用 Base URL + Key 获取模型列表
 POST /api/settings/test           LLM 连通性测试

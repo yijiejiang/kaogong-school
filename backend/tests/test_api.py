@@ -95,6 +95,9 @@ def test_ingest_sample_and_search() -> None:
             for chunk in detail["chunks"]
         )
         assert any(chunk["tags"] for chunk in detail["chunks"])
+        assert all(chunk["chunk_type"] for chunk in detail["chunks"])
+        assert any(chunk["heading_path"] for chunk in detail["chunks"])
+        assert any(chunk["labels"] for chunk in detail["chunks"])
 
         search = client.post(
             "/api/search", json={"query": "资料分析速算技巧", "top_k": 5}
@@ -104,6 +107,7 @@ def test_ingest_sample_and_search() -> None:
         assert body["results"]
         assert any("截位" in item["content"] for item in body["results"])
         assert any(card["kp_id"] == "xingce-ziliao-susuan" for card in body["cards"])
+        assert all(item["chunk_type"] for item in body["results"])
 
 
 def test_chat_knowledge_uses_library() -> None:
@@ -192,6 +196,16 @@ def test_generate_exam_and_submit() -> None:
             item["variants"]
             for item in report["questions"]
             if not item["is_correct"]
+        )
+        assert any(item.get("skills") for item in report["questions"])
+        assert report["skill_changes"]
+        skill_map = client.get(
+            "/api/knowledge/skill-map", params={"user_id": "pytest-p2"}
+        ).json()
+        assert any(
+            item["attempts"] > 0
+            for group in skill_map["subjects"]
+            for item in group["skills"]
         )
         assert (
             client.get(f"/api/attempts/{report['attempt_id']}/report").status_code
@@ -548,6 +562,26 @@ def test_ai_question_parsing_helpers() -> None:
     assert normalized["answer_json"] == '{"value": "B"}'
     assert normalized["source"] == "ai"
 
+    tolerant = _extract_questions(
+        "下面是题目：\n```json\n"
+        '{"questions": [{"stem": "1+1=?", '
+        '"options": [{"key": "A", "text": "1"}, {"key": "B", "text": "2"}, '
+        '{"key": "C", "text": "3"}, {"key": "D", "text": "4"},], '
+        '"answer": "B", "knowledge_point_id": "xingce-shuliang-yunsuan"}]}\n'
+        "```\n希望有帮助。"
+    )
+    assert len(tolerant) == 1
+    assert tolerant[0]["stem"] == "1+1=?"
+
+    from app.exams.ai_generator import AiGenerationError
+
+    try:
+        _extract_questions('[{"key": "A", "text": "1"}]')
+    except AiGenerationError:
+        pass
+    else:
+        raise AssertionError("option arrays must not be treated as questions")
+
 
 def test_per_user_profiles_are_isolated() -> None:
     user_id = "pytest-multi-user"
@@ -874,4 +908,451 @@ def test_model_list_blocks_metadata_address() -> None:
         assert "云元数据" in response.json()["detail"]
 
 
+def test_leading_scratchpad_is_stripped() -> None:
+    from app.api.chat import _clean_leading, _LeadingFilter
 
+    assert (
+        _clean_leading("I'll pull up your data.\n\n**目标考试**\n国考")
+        == "**目标考试**\n国考"
+    )
+    assert _clean_leading("中文开头") == "中文开头"
+
+    leading = _LeadingFilter()
+    assert leading.feed("supervisor", "I'll pull ") == ""
+    assert leading.feed("supervisor", "up your data.\n\n**目标") == "**目标"
+    assert leading.feed("supervisor", "考试**") == "考试**"
+
+
+def test_connect_info_and_qr() -> None:
+    from app.config import get_settings
+
+    settings = get_settings()
+    previous = settings.public_base_url
+    settings.public_base_url = ""
+    try:
+        with TestClient(app) as client:
+            info = client.get("/api/connect/info")
+            assert info.status_code == 200
+            body = info.json()
+            assert body["api_base"].startswith("http://")
+            assert body["source"] == "lan"
+            assert body["payload"].startswith("kaogong://connect?base=")
+            assert body["port"] > 0
+
+            qr = client.get("/api/connect/qr.png")
+            assert qr.status_code == 200
+            assert qr.headers["content-type"] == "image/png"
+            assert qr.content.startswith(b"\x89PNG")
+    finally:
+        settings.public_base_url = previous
+
+
+def test_connect_uses_public_base_url() -> None:
+    from app.config import get_settings
+
+    settings = get_settings()
+    previous = settings.public_base_url
+    settings.public_base_url = "https://kaogong.example.ts.net/"
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/connect/info").json()
+            assert body["api_base"] == "https://kaogong.example.ts.net"
+            assert body["source"] == "public"
+            assert body["payload"] == (
+                "kaogong://connect?base=https%3A%2F%2Fkaogong.example.ts.net"
+            )
+    finally:
+        settings.public_base_url = previous
+
+
+async def test_tagging_eval_cases() -> None:
+    from app.db.session import SessionLocal
+    from app.knowledge.seed import seed_knowledge_tree
+    from app.rag.tagging import load_prepared_points, tag_text_multi
+
+    path = Path(__file__).resolve().parent.parent / "evals" / "library_cases.json"
+    payload = json.loads(path.read_text())
+    cases = payload["tagging"]
+
+    with TestClient(app):
+        pass
+
+    async with SessionLocal() as db:
+        await seed_knowledge_tree(db)
+        prepared = await load_prepared_points(db)
+        top1 = 0
+        type_hits = 0
+        for case in cases:
+            result = tag_text_multi(case["text"], prepared)
+            if result.knowledge_point_id == case["expected_kp"]:
+                top1 += 1
+            if result.chunk_type == case["expected_type"]:
+                type_hits += 1
+
+    assert top1 / len(cases) >= 0.8
+    assert type_hits / len(cases) >= 0.8
+
+
+def test_chunk_type_classifier() -> None:
+    from app.rag.tagging import classify_chunk
+
+    assert classify_chunk("增长率=(现期-基期)÷基期。") == "formula"
+    assert classify_chunk("第一步，先看选项差距，再决定截位。") == "method"
+    assert classify_chunk("常见陷阱：截位方向不一致。") == "trap"
+    assert classify_chunk("行政处罚是指行政机关依法给予制裁的行为。") == "definition"
+    assert classify_chunk("例题：4832÷1276 最接近多少？") == "example"
+
+
+def test_knowledge_extraction_review_flow() -> None:
+    with TestClient(app) as client:
+        material = _seed_sample(client)
+
+        units = client.get(
+            "/api/knowledge/units",
+            params={"material_id": material["id"]},
+        ).json()
+        assert units, "sample ingestion should extract rule units"
+        assert all(unit["status"] == "draft" for unit in units)
+        assert any(unit["title"] for unit in units)
+        assert all(isinstance(unit["steps"], list) for unit in units)
+
+        first = units[0]
+        approved = client.patch(
+            f"/api/knowledge/units/{first['id']}",
+            json={"status": "approved", "title": first["title"] + "（已审）"},
+        )
+        assert approved.status_code == 200
+        assert approved.json()["status"] == "approved"
+        assert approved.json()["title"].endswith("（已审）")
+
+        drafts = client.get(
+            "/api/knowledge/units",
+            params={"material_id": material["id"], "status": "draft"},
+        ).json()
+        assert all(unit["id"] != first["id"] for unit in drafts)
+
+        rejected = client.patch(
+            f"/api/knowledge/units/{units[-1]['id']}",
+            json={"status": "rejected"},
+        )
+        assert rejected.json()["status"] == "rejected"
+
+        bad = client.patch(
+            f"/api/knowledge/units/{first['id']}",
+            json={"status": "unknown"},
+        )
+        assert bad.status_code == 400
+
+        skills = client.get("/api/knowledge/skills").json()
+        assert any(skill["source_unit_ids"] for skill in skills)
+        target = skills[0]
+        patched = client.patch(
+            f"/api/knowledge/skills/{target['id']}",
+            json={"status": "approved", "summary": "技能摘要"},
+        )
+        assert patched.status_code == 200
+        assert patched.json()["status"] == "approved"
+        assert patched.json()["summary"] == "技能摘要"
+
+        rerun = client.post(f"/api/knowledge/extract/{material['id']}")
+        assert rerun.status_code == 200
+        body = rerun.json()
+        assert body["model"] == "rule"
+        assert body["units"] > 0
+        fresh = client.get(
+            "/api/knowledge/units",
+            params={"material_id": material["id"]},
+        ).json()
+        assert all(unit["status"] == "draft" for unit in fresh)
+
+
+def test_reindex_clears_knowledge_units() -> None:
+    with TestClient(app) as client:
+        material = _seed_sample(client)
+        before = client.get(
+            "/api/knowledge/units",
+            params={"material_id": material["id"]},
+        ).json()
+        assert before
+
+        response = client.post(f"/api/materials/{material['id']}/reindex")
+        assert response.status_code == 200
+        ready = _wait_until_ready(client, material["id"])
+        assert ready.get("status") == "ready"
+        after = client.get(
+            "/api/knowledge/units",
+            params={"material_id": material["id"]},
+        ).json()
+        assert after
+        assert {unit["id"] for unit in after}.isdisjoint(
+            {unit["id"] for unit in before}
+        )
+
+
+
+
+
+def test_deepseek_config_urls() -> None:
+    from app.schemas.settings import LlmSettings
+    from app.services.deepseek_tools import resolve_config
+
+    config = resolve_config(
+        LlmSettings(deepseek_api_base="https://api.deepseek.com", deepseek_api_key="k")
+    )
+    assert config.ready
+    assert config.url("/tools/search") == "https://api.deepseek.com/v1/tools/search"
+
+    versioned = resolve_config(
+        LlmSettings(
+            deepseek_api_base="https://api.deepseek.com/v1/",
+            deepseek_api_key="k",
+        )
+    )
+    assert versioned.url("/tools/ocr") == "https://api.deepseek.com/v1/tools/ocr"
+
+    empty = resolve_config(LlmSettings())
+    assert not empty.ready
+    assert empty.api_base == "https://api.deepseek.com"
+
+
+async def test_deepseek_settings_roundtrip() -> None:
+    from app.db.session import SessionLocal
+    from app.services.settings_service import load_llm_settings, save_llm_settings, to_public
+
+    with TestClient(app):
+        pass
+
+    async with SessionLocal() as db:
+        previous = await load_llm_settings(db)
+        try:
+            saved = await save_llm_settings(
+                db,
+                previous.model_copy(
+                    update={
+                        "deepseek_api_base": "https://api.deepseek.com",
+                        "deepseek_api_key": "ds-test-key",
+                    }
+                ),
+            )
+            assert saved.deepseek_api_key == "ds-test-key"
+            public = to_public(saved)
+            assert public.deepseek_api_key_set is True
+            assert "ds-test-key" not in public.deepseek_api_key
+            assert "••••" in public.deepseek_api_key
+
+            keep = await save_llm_settings(
+                db,
+                saved.model_copy(
+                    update={"deepseek_api_base": "", "deepseek_api_key": ""}
+                ),
+            )
+            assert keep.deepseek_api_base == "https://api.deepseek.com"
+            assert keep.deepseek_api_key == "ds-test-key"
+        finally:
+            await save_llm_settings(db, previous)
+
+
+def test_scanned_pdf_uses_deepseek_ocr(monkeypatch, tmp_path) -> None:
+    import pymupdf
+
+    from app.rag import parsers
+    from app.services.deepseek_tools import DeepSeekConfig
+
+    path = tmp_path / "scan.pdf"
+    document = pymupdf.open()
+    document.new_page()
+    document.save(path)
+    document.close()
+
+    def fake_ocr(config, file_path, filename=None, purpose="text_recognition"):
+        assert config.ready
+        return [(1, "扫描页识别出的增长率公式")]
+
+    monkeypatch.setattr(parsers, "ocr_file_sync", fake_ocr)
+    parsed = parsers.parse_file(
+        path,
+        "scan.pdf",
+        "application/pdf",
+        DeepSeekConfig("https://api.deepseek.com", "test-key"),
+    )
+    assert "扫描页识别出的增长率公式" in parsed.text
+    assert "DeepSeek OCR" in parsed.warning
+
+
+async def test_deepseek_asr_preferred(monkeypatch, tmp_path) -> None:
+    from app.rag import asr
+    from app.schemas.settings import LlmSettings
+    from app.services.deepseek_tools import DeepSeekConfig
+
+    path = tmp_path / "short.wav"
+    path.write_bytes(b"RIFF")
+
+    async def fake_transcribe(config, file_path, filename=None):
+        return "这是语音转写结果"
+
+    monkeypatch.setattr(asr, "transcribe_audio", fake_transcribe)
+    result = await asr.transcribe_file(
+        path,
+        LlmSettings(),
+        deepseek=DeepSeekConfig("https://api.deepseek.com", "test-key"),
+    )
+    assert result.provider == "deepseek"
+    assert result.text == "这是语音转写结果"
+
+
+def test_agent_instructions_include_today() -> None:
+    from datetime import date
+
+    from app.agents.factory import create_root_agent
+    from app.schemas.settings import LlmSettings
+
+    agent = create_root_agent(
+        LlmSettings(api_base="https://example.com/v1", api_key="k", default_model="test")
+    )
+    today = date.today().isoformat()
+    assert today in agent.instruction
+    assert today in agent.sub_agents[0].instruction
+
+
+def test_parse_timed_subtitles() -> None:
+    from app.rag.video_slides import parse_timed_subtitles
+
+    vtt = """WEBVTT
+
+00:00:01.000 --> 00:00:04.000
+第一句讲解
+
+00:01:05.500 --> 00:01:08.000
+第二句讲解
+"""
+    lines = parse_timed_subtitles(vtt)
+    assert len(lines) == 2
+    assert lines[0].start == 1.0
+    assert lines[0].end == 4.0
+    assert lines[0].text == "第一句讲解"
+    assert lines[1].start == 65.5
+    assert lines[1].text == "第二句讲解"
+
+
+def test_build_video_slides_groups_similar_frames(tmp_path) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    from app.rag import video_slides
+
+    font = ImageFont.truetype(
+        "/System/Library/Fonts/Supplemental/Songti.ttc", 44
+    )
+    frames: list[Path] = []
+    texts = [
+        "资料分析速算\n截位直除方法",
+        "资料分析速算\n截位直除方法",
+        "增长率公式\n增长率等于增长量除以基期量",
+    ]
+    for index, text in enumerate(texts):
+        path = tmp_path / f"frame-{index:05d}.jpg"
+        image = Image.new("RGB", (1000, 500), "white")
+        draw = ImageDraw.Draw(image)
+        for line_index, line in enumerate(text.splitlines()):
+            draw.text((50, 80 + line_index * 90), line, fill="black", font=font)
+        image.save(path)
+        frames.append(path)
+
+    slides = video_slides._build_slides(
+        frames, interval=2.0, duration=10.0, material_id="pytest-video"
+    )
+    try:
+        assert len(slides) == 2
+        assert "截位直除" in slides[0].ocr_text
+        assert "增长率" in slides[1].ocr_text
+        assert slides[0].frame_path.startswith("frames/pytest-video/")
+        assert slides[1].start >= 4.0
+        assert slides[1].end == 10.0
+    finally:
+        video_slides.clear_frames("pytest-video")
+
+
+def test_slide_chunks_include_timestamps() -> None:
+    from app.rag.video_slides import VideoAnalysis, VideoSlide, slide_chunks
+
+    analysis = VideoAnalysis(
+        title="资料分析课",
+        duration=120,
+        transcript="讲解",
+        slides=[
+            VideoSlide(
+                index=1,
+                start=10,
+                end=40,
+                ocr_text="截位直除",
+                frame_path="frames/x/slide-001.jpg",
+                transcript="先看选项差距",
+                title="截位直除",
+                summary="按选项差距决定截位",
+                points=["先看选项"],
+            )
+        ],
+    )
+    chunks = slide_chunks(analysis)
+    assert chunks[0]["time_start"] == 10
+    assert chunks[0]["time_end"] == 40
+    assert "截位直除" in chunks[0]["heading_path"]
+    assert "先看选项差距" in chunks[0]["content"]
+
+
+def test_skill_map_endpoint() -> None:
+    with TestClient(app) as client:
+        _seed_sample(client)
+        response = client.get(
+            "/api/knowledge/skill-map", params={"user_id": "pytest-user"}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert "summary" in body
+        assert body["summary"]["total"] >= 1
+        assert body["subjects"]
+        module = body["subjects"][0]
+        assert module["skills"]
+        assert "mastery_status" in module["skills"][0]
+        assert "exam_patterns" in module["skills"][0]
+
+
+async def test_create_point_from_unit_proposal() -> None:
+    from sqlalchemy import select
+
+    from app.db.models import KnowledgePoint, KnowledgeUnit
+    from app.db.session import SessionLocal
+
+    with TestClient(app) as client:
+        _seed_sample(client)
+        material_id = _seed_sample(client)["id"]
+
+    name = "pytest 新考点候选"
+    async with SessionLocal() as db:
+        unit = (
+            await db.execute(
+                select(KnowledgeUnit)
+                .where(KnowledgeUnit.material_id == material_id)
+                .limit(1)
+            )
+        ).scalar_one()
+        unit.proposed_knowledge_point = name
+        unit.proposed_parent_id = "xingce-ziliao-susuan"
+        unit.proposed_reason = "pytest"
+        await db.commit()
+        unit_id = unit.id
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/knowledge/units/{unit_id}/create-point")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["knowledge_point"]["name"] == name
+        assert body["unit"]["status"] == "approved"
+        assert body["unit"]["proposed_knowledge_point"] == ""
+
+    async with SessionLocal() as db:
+        point = (
+            await db.execute(
+                select(KnowledgePoint).where(KnowledgePoint.name == name)
+            )
+        ).scalar_one()
+        assert point.parent_id == "xingce-ziliao-susuan"

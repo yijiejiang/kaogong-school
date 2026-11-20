@@ -1,10 +1,13 @@
 import json
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import DATA_DIR
 from app.db.models import Chunk, Job, Material
 from app.db.session import get_db
 from app.rag.embeddings import get_embedding_service
@@ -88,7 +91,7 @@ async def get_material(
         select(Chunk)
         .where(Chunk.material_id == material_id)
         .order_by(Chunk.chunk_index)
-        .limit(200)
+        .limit(400)
     )
     chunks: list[ChunkOut] = []
     for chunk in result.scalars():
@@ -96,21 +99,55 @@ async def get_material(
             tags = json.loads(chunk.tags_json or "[]")
         except json.JSONDecodeError:
             tags = []
+        try:
+            labels = json.loads(chunk.labels_json or "[]")
+        except json.JSONDecodeError:
+            labels = []
         chunks.append(
             ChunkOut(
                 id=chunk.id,
                 chunk_index=chunk.chunk_index,
                 content=chunk.content,
                 page=chunk.page,
+                time_start=chunk.time_start,
+                time_end=chunk.time_end,
+                frame_url=(
+                    f"/api/materials/{chunk.material_id}/frames/"
+                    f"{chunk.frame_path.rsplit('/', 1)[-1]}"
+                    if chunk.frame_path
+                    else ""
+                ),
                 heading=chunk.heading,
+                heading_path=chunk.heading_path,
+                chunk_type=chunk.chunk_type,
                 subject=chunk.subject,
                 module=chunk.module,
                 knowledge_point_id=chunk.knowledge_point_id,
                 knowledge_point_name=chunk.knowledge_point_name,
                 tags=tags,
+                labels=labels,
             )
         )
     return MaterialDetail(material=MaterialOut.model_validate(material), chunks=chunks)
+
+
+@router.get("/materials/{material_id}/frames/{filename}")
+async def get_material_frame(
+    material_id: str,
+    filename: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FileResponse:
+    material = await db.get(Material, material_id)
+    if material is None:
+        raise HTTPException(status_code=404, detail="资料不存在。")
+    if not filename or Path(filename).name != filename:
+        raise HTTPException(status_code=400, detail="文件名不合法。")
+
+    path = (DATA_DIR / "frames" / material_id / filename).resolve()
+    frames_root = (DATA_DIR / "frames" / material_id).resolve()
+    if frames_root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail="关键帧不存在。")
+    return FileResponse(path)
 
 
 @router.post("/materials/{material_id}/reindex", response_model=MaterialOut)

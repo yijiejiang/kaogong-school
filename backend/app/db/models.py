@@ -61,12 +61,18 @@ class Chunk(Base):
     embedding_dim: Mapped[int] = mapped_column(Integer, default=0)
     embedding_model: Mapped[str] = mapped_column(String(128), default="")
     page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    time_start: Mapped[float | None] = mapped_column(Float, nullable=True)
+    time_end: Mapped[float | None] = mapped_column(Float, nullable=True)
+    frame_path: Mapped[str] = mapped_column(String(512), default="")
     heading: Mapped[str] = mapped_column(String(255), default="")
+    heading_path: Mapped[str] = mapped_column(String(512), default="")
+    chunk_type: Mapped[str] = mapped_column(String(16), default="summary", index=True)
     subject: Mapped[str] = mapped_column(String(32), default="")
     module: Mapped[str] = mapped_column(String(64), default="")
     knowledge_point_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     knowledge_point_name: Mapped[str] = mapped_column(String(128), default="")
     tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    labels_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )
@@ -102,6 +108,80 @@ class KnowledgeCard(Base):
     )
 
 
+class KnowledgeUnit(Base):
+    __tablename__ = "knowledge_units"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    material_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("materials.id", ondelete="CASCADE"), index=True
+    )
+    chunk_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("chunks.id", ondelete="CASCADE"), index=True
+    )
+    chunk_type: Mapped[str] = mapped_column(String(16), default="summary")
+    title: Mapped[str] = mapped_column(String(255), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    definition: Mapped[str] = mapped_column(Text, default="")
+    conditions_json: Mapped[str] = mapped_column(Text, default="[]")
+    steps_json: Mapped[str] = mapped_column(Text, default="[]")
+    pitfalls_json: Mapped[str] = mapped_column(Text, default="[]")
+    examples_json: Mapped[str] = mapped_column(Text, default="[]")
+    exam_pattern: Mapped[str] = mapped_column(Text, default="")
+    signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    variants_json: Mapped[str] = mapped_column(Text, default="[]")
+    connections_json: Mapped[str] = mapped_column(Text, default="[]")
+    question_design_json: Mapped[str] = mapped_column(Text, default="[]")
+    knowledge_point_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    knowledge_point_name: Mapped[str] = mapped_column(String(128), default="")
+    skill_name: Mapped[str] = mapped_column(String(128), default="")
+    skill_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    proposed_knowledge_point: Mapped[str] = mapped_column(String(128), default="")
+    proposed_parent_id: Mapped[str] = mapped_column(String(64), default="")
+    proposed_reason: Mapped[str] = mapped_column(Text, default="")
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    evidence_json: Mapped[str] = mapped_column(Text, default="[]")
+    extraction_model: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class Skill(Base):
+    __tablename__ = "skills"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    normalized_name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    subject: Mapped[str] = mapped_column(String(32), default="")
+    module: Mapped[str] = mapped_column(String(64), default="")
+    knowledge_point_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    knowledge_point_name: Mapped[str] = mapped_column(String(128), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    conditions_json: Mapped[str] = mapped_column(Text, default="[]")
+    steps_json: Mapped[str] = mapped_column(Text, default="[]")
+    pitfalls_json: Mapped[str] = mapped_column(Text, default="[]")
+    examples_json: Mapped[str] = mapped_column(Text, default="[]")
+    exam_patterns_json: Mapped[str] = mapped_column(Text, default="[]")
+    signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    variants_json: Mapped[str] = mapped_column(Text, default="[]")
+    connections_json: Mapped[str] = mapped_column(Text, default="[]")
+    question_design_json: Mapped[str] = mapped_column(Text, default="[]")
+    difficulty: Mapped[int] = mapped_column(Integer, default=3)
+    source_unit_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
@@ -130,6 +210,8 @@ class Question(Base):
     module: Mapped[str] = mapped_column(String(64), default="资料分析")
     knowledge_point_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     knowledge_point_name: Mapped[str] = mapped_column(String(128), default="")
+    skill_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    skill_name: Mapped[str] = mapped_column(String(128), default="")
     stem: Mapped[str] = mapped_column(Text)
     options_json: Mapped[str] = mapped_column(Text, default="[]")
     answer_json: Mapped[str] = mapped_column(Text, default="{}")
@@ -229,6 +311,24 @@ class Mastery(Base):
     user_id: Mapped[str] = mapped_column(String(64), index=True)
     knowledge_point_id: Mapped[str] = mapped_column(String(64), index=True)
     knowledge_point_name: Mapped[str] = mapped_column(String(128), default="")
+    score: Mapped[float] = mapped_column(Float, default=50.0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    correct: Mapped[int] = mapped_column(Integer, default=0)
+    last_practiced: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class SkillMastery(Base):
+    __tablename__ = "skill_mastery"
+
+    id: Mapped[str] = mapped_column(String(192), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    skill_id: Mapped[str] = mapped_column(String(64), index=True)
+    skill_name: Mapped[str] = mapped_column(String(128), default="")
     score: Mapped[float] = mapped_column(Float, default=50.0)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     correct: Mapped[int] = mapped_column(Integer, default=0)

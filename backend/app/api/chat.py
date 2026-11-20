@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -44,8 +45,61 @@ def _event_text(event) -> str:
     if not event.content or not event.content.parts:
         return ""
     return "".join(
-        part.text for part in event.content.parts if getattr(part, "text", None)
+        part.text
+        for part in event.content.parts
+        if getattr(part, "text", None) and not getattr(part, "thought", False)
     )
+
+
+_CJK_RE = re.compile(r"[一-鿿]")
+
+
+def _clean_leading(text: str) -> str:
+    """Drop an English scratchpad preamble before the first Chinese line."""
+    if not text:
+        return ""
+    lines = text.splitlines(keepends=True)
+    index = next(
+        (i for i, line in enumerate(lines) if _CJK_RE.search(line)), None
+    )
+    if index is None or index == 0:
+        return text
+    leading = "".join(lines[:index])
+    if len(leading) > 400:
+        return text
+    return "".join(lines[index:]).lstrip()
+
+
+class _LeadingFilter:
+    """Buffer the first chunks until the answer reaches Chinese content."""
+
+    def __init__(self) -> None:
+        self._buffers: dict[str, str] = {}
+        self._released: set[str] = set()
+
+    def feed(self, author: str, text: str, final: bool = False) -> str:
+        if author in self._released:
+            return text
+        buffer = self._buffers.get(author, "") + text
+        if _CJK_RE.search(buffer):
+            self._released.add(author)
+            self._buffers.pop(author, None)
+            return _clean_leading(buffer)
+        if final or len(buffer) > 400:
+            self._released.add(author)
+            self._buffers.pop(author, None)
+            return buffer
+        self._buffers[author] = buffer
+        return ""
+
+    def flush(self) -> list[tuple[str, str]]:
+        pending = [
+            (author, text)
+            for author, text in self._buffers.items()
+            if author not in self._released
+        ]
+        self._buffers.clear()
+        return pending
 
 
 def _event_ui(event) -> list[dict]:
@@ -124,6 +178,7 @@ async def _stream_events(
     streamed_authors: set[str] = set()
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     usage_by_author: dict[str, dict] = {}
+    leading = _LeadingFilter()
 
     try:
         async for event in runner.run_async(
@@ -143,16 +198,26 @@ async def _stream_events(
             text = _event_text(event)
             if text:
                 if event.partial:
-                    streamed_authors.add(event.author)
-                    yield _sse(
-                        {"type": "delta", "author": event.author, "text": text}
-                    )
+                    text = leading.feed(event.author, text)
+                    if text:
+                        streamed_authors.add(event.author)
+                        yield _sse(
+                            {
+                                "type": "delta",
+                                "author": event.author,
+                                "text": text,
+                            }
+                        )
                 elif event.author in streamed_authors:
                     # The final event repeats the aggregated partial text.
                     streamed_authors.discard(event.author)
                 else:
                     yield _sse(
-                        {"type": "message", "author": event.author, "text": text}
+                        {
+                            "type": "message",
+                            "author": event.author,
+                            "text": _clean_leading(text),
+                        }
                     )
 
             for widget in _event_ui(event):
@@ -187,6 +252,14 @@ async def _stream_events(
         logger.exception("chat stream failed")
         yield _sse({"type": "error", "message": _friendly_error(exc)})
     finally:
+        for author, text in leading.flush():
+            yield _sse(
+                {
+                    "type": "message",
+                    "author": author,
+                    "text": _clean_leading(text),
+                }
+            )
         await _save_usage(llm, user_id, session_id, usage_by_author)
         yield _sse({"type": "done", "usage": usage, "session_id": session_id})
 
@@ -280,6 +353,9 @@ async def session_messages(
         for widget in _event_ui(event):
             pending_ui.setdefault(event.author, []).append((widget, event.timestamp))
         text = _event_text(event)
+        if not text.strip():
+            continue
+        text = _clean_leading(text)
         if not text.strip():
             continue
         item = {

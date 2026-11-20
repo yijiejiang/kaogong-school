@@ -1,6 +1,7 @@
 """File and web parsing with a small SSRF guard."""
 
 import ipaddress
+import re
 import socket
 import tempfile
 from dataclasses import dataclass
@@ -14,6 +15,12 @@ from bs4 import BeautifulSoup
 
 from app.rag.ocr import ocr_image
 from app.rag.text import normalize_text
+from app.services.deepseek_tools import (
+    DeepSeekConfig,
+    DeepSeekError,
+    fetch_page,
+    ocr_file_sync,
+)
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -51,23 +58,40 @@ def sanitize_filename(filename: str) -> str:
     return (name or "document")[:180]
 
 
-def parse_file(path: Path, filename: str, mime_type: str = "") -> ParsedDocument:
+def parse_file(
+    path: Path,
+    filename: str,
+    mime_type: str = "",
+    deepseek: DeepSeekConfig | None = None,
+) -> ParsedDocument:
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
-        return _parse_pdf(path, filename, mime_type)
+        return _parse_pdf(path, filename, mime_type, deepseek)
     if suffix == ".docx":
         return _parse_docx(path, filename, mime_type)
     if suffix in {".txt", ".md", ".markdown"}:
         return _parse_text(path, filename, mime_type)
     if suffix in IMAGE_SUFFIXES:
-        return _parse_image(path, filename, mime_type)
+        return _parse_image(path, filename, mime_type, deepseek)
     raise UnsupportedFileType(
         "当前支持 PDF、DOCX、TXT、Markdown、PNG/JPG 图片。"
     )
 
 
-def _parse_image(path: Path, filename: str, mime_type: str) -> ParsedDocument:
+def _parse_image(
+    path: Path,
+    filename: str,
+    mime_type: str,
+    deepseek: DeepSeekConfig | None = None,
+) -> ParsedDocument:
     text, warning = ocr_image(path)
+    if not text.strip() and deepseek and deepseek.ready:
+        try:
+            pages = ocr_file_sync(deepseek, path, filename)
+            text = "\n\n".join(page_text for _, page_text in pages)
+            warning = "DeepSeek OCR"
+        except DeepSeekError as exc:
+            warning = f"{warning}；DeepSeek OCR 失败：{exc}"
     if not text.strip():
         raise ParseError(warning or "图片没有识别出文字。")
     return ParsedDocument(
@@ -80,7 +104,58 @@ def _parse_image(path: Path, filename: str, mime_type: str) -> ParsedDocument:
     )
 
 
-def _parse_pdf(path: Path, filename: str, mime_type: str) -> ParsedDocument:
+def _strip_page_noise(pages: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    if not pages:
+        return pages
+    threshold = max(2, int(len(pages) * 0.6))
+    counts: dict[str, int] = {}
+    for _, page_text in pages:
+        seen = {
+            line.strip()
+            for line in page_text.splitlines()
+            if line.strip()
+        }
+        for line in seen:
+            counts[line] = counts.get(line, 0) + 1
+
+    cleaned: list[tuple[int, str]] = []
+    for number, page_text in pages:
+        kept: list[str] = []
+        for line in page_text.splitlines():
+            value = line.strip()
+            if not value:
+                kept.append("")
+                continue
+            if _is_page_noise(value, counts.get(value, 0), threshold):
+                continue
+            kept.append(_strip_dot_leader(value))
+        cleaned.append((number, "\n".join(kept)))
+    return cleaned
+
+
+_PAGE_MARK_RE = re.compile(r"^[-—\s]*第?\s*\d{1,3}\s*页?[-—\s]*$")
+
+
+def _is_page_noise(line: str, occurrences: int, threshold: int) -> bool:
+    if _PAGE_MARK_RE.match(line):
+        return True
+    if len(line) <= 80 and occurrences >= threshold:
+        return True
+    stripped = re.sub(r"[\s.·…\-_=*#]+", "", line)
+    return len(line) > 4 and len(stripped) <= max(1, len(line) // 8)
+
+
+def _strip_dot_leader(line: str) -> str:
+    value = re.sub(r"[.·…]{3,}\s*\d{0,3}\s*$", "", line).rstrip(" .·…")
+    return value or line
+
+
+def _parse_pdf(
+    path: Path,
+    filename: str,
+    mime_type: str,
+    deepseek: DeepSeekConfig | None = None,
+) -> ParsedDocument:
     document = pymupdf.open(path)
     pages: list[tuple[int, str]] = []
     empty_pages = 0
@@ -94,11 +169,22 @@ def _parse_pdf(path: Path, filename: str, mime_type: str) -> ParsedDocument:
     finally:
         document.close()
 
-    text = "\n\n".join(page_text for _, page_text in pages if page_text)
-    title = str(metadata.get("title") or "").strip() or Path(filename).stem
     warning = ""
     if pages and empty_pages / len(pages) > 0.5:
-        warning = "多数页面没有可提取文字，可能是扫描版 PDF；P1 暂未接入 OCR。"
+        warning = "多数页面没有可提取文字，可能是扫描版 PDF。"
+        if deepseek and deepseek.ready:
+            try:
+                ocr_pages = ocr_file_sync(deepseek, path, filename)
+                pages = ocr_pages
+                warning = "扫描版 PDF 已使用 DeepSeek OCR。"
+            except DeepSeekError as exc:
+                warning = f"{warning} DeepSeek OCR 失败：{exc}"
+
+    pages = _strip_page_noise(pages)
+    text = "\n\n".join(page_text for _, page_text in pages if page_text)
+    title = str(metadata.get("title") or "").strip() or Path(filename).stem
+    if pages and empty_pages / len(pages) > 0.5 and not text.strip():
+        warning = warning or "PDF 没有可提取文字。"
     return ParsedDocument(
         title=title,
         text=text,
@@ -184,7 +270,35 @@ def is_public_url(url: str) -> bool:
     return True
 
 
-async def fetch_url(url: str, max_bytes: int) -> ParsedDocument:
+async def fetch_url(
+    url: str,
+    max_bytes: int,
+    deepseek: DeepSeekConfig | None = None,
+) -> ParsedDocument:
+    deepseek_warning = ""
+    if (
+        deepseek
+        and deepseek.ready
+        and not urlparse(url).path.lower().endswith(".pdf")
+        and is_public_url(url)
+    ):
+        try:
+            page = await fetch_page(deepseek, url)
+            content = page["content"].strip()
+            if content:
+                if len(content.encode("utf-8")) > max_bytes:
+                    raise FetchError("网页内容过大，已停止抓取。")
+                return ParsedDocument(
+                    title=page["title"] or (urlparse(url).hostname or "网页资料"),
+                    text=content,
+                    pages=[(1, content)],
+                    kind="url",
+                    mime_type="text/markdown",
+                    warning="DeepSeek 抓取",
+                )
+        except (DeepSeekError, FetchError) as exc:
+            deepseek_warning = f"DeepSeek 抓取失败，已回退本地解析：{exc}"
+
     current = url
     headers = {"User-Agent": "KaogongSchool/0.1 (local personal study tool)"}
 
@@ -231,6 +345,7 @@ async def fetch_url(url: str, max_bytes: int) -> ParsedDocument:
                         tmp_path,
                         f"{urlparse(current).hostname or 'web'}.pdf",
                         content_type,
+                        deepseek,
                     )
                 finally:
                     tmp_path.unlink(missing_ok=True)
@@ -262,6 +377,7 @@ async def fetch_url(url: str, max_bytes: int) -> ParsedDocument:
                 pages=[(1, text)],
                 kind="url",
                 mime_type=content_type,
+                warning=deepseek_warning,
             )
 
     raise FetchError("重定向次数过多。")

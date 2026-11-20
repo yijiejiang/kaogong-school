@@ -9,6 +9,7 @@ from app.api import (
     analytics,
     asr,
     chat,
+    connect,
     exams,
     health,
     knowledge,
@@ -60,6 +61,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(connect.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(materials.router)

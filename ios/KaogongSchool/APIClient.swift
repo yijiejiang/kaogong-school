@@ -237,6 +237,29 @@ actor APIClient {
         )
     }
 
+    func attempts() async throws -> [AttemptSummary] {
+        try await get("/api/attempts", query: ["user_id": userId])
+    }
+
+    func attemptReport(attemptId: String) async throws -> AttemptReport {
+        try await get("/api/attempts/\(attemptId)/report")
+    }
+
+    func saveAnswers(
+        attemptId: String,
+        answers: [[String: Any]]
+    ) async throws {
+        struct Response: Decodable {
+            let ok: Bool
+            let saved: Int
+        }
+        let _: Response = try await send(
+            "/api/attempts/\(attemptId)/answers",
+            method: "POST",
+            json: ["answers": answers]
+        )
+    }
+
     func submitAttempt(attemptId: String, answers: [[String: Any]]) async throws -> AttemptReport {
         try await send(
             "/api/attempts/\(attemptId)/submit",
@@ -269,6 +292,151 @@ actor APIClient {
 
     func materials() async throws -> [MaterialItem] {
         try await get("/api/materials")
+    }
+
+    func materialDetail(id: String) async throws -> MaterialDetail {
+        try await get("/api/materials/\(id)")
+    }
+
+    func reindexMaterial(id: String) async throws -> MaterialItem {
+        try await send(
+            "/api/materials/\(id)/reindex",
+            method: "POST",
+            json: [:]
+        )
+    }
+
+    func deleteMaterial(id: String) async throws {
+        struct Response: Decodable { let ok: Bool }
+        let _: Response = try await perform(
+            "/api/materials/\(id)",
+            method: "DELETE"
+        )
+    }
+
+    func seedSample() async throws -> MaterialItem {
+        try await send(
+            "/api/materials/seed-sample",
+            method: "POST",
+            json: [:]
+        )
+    }
+
+    func searchMaterials(
+        query: String,
+        topK: Int = 8
+    ) async throws -> SearchResponse {
+        try await send(
+            "/api/search",
+            method: "POST",
+            json: [
+                "query": query,
+                "subject": "",
+                "module": "",
+                "top_k": topK,
+            ]
+        )
+    }
+
+    func knowledgeTree() async throws -> [KnowledgeNode] {
+        try await get("/api/knowledge/tree")
+    }
+
+    func knowledgeCard(kpId: String) async throws -> KnowledgeCardDetail {
+        try await get("/api/knowledge/cards/\(kpId)")
+    }
+
+    func knowledgeUnits(
+        status: String? = nil,
+        materialId: String? = nil,
+        hasProposal: Bool = false
+    ) async throws -> [KnowledgeUnitItem] {
+        var query = ["limit": "300"]
+        if let status, !status.isEmpty { query["status"] = status }
+        if let materialId, !materialId.isEmpty { query["material_id"] = materialId }
+        if hasProposal { query["has_proposal"] = "true" }
+        return try await get("/api/knowledge/units", query: query)
+    }
+
+    func updateKnowledgeUnitStatus(id: String, status: String) async throws -> KnowledgeUnitItem {
+        try await send(
+            "/api/knowledge/units/\(id)",
+            method: "PATCH",
+            json: ["status": status]
+        )
+    }
+
+    func updateKnowledgeUnit(
+        id: String,
+        title: String?,
+        summary: String?
+    ) async throws -> KnowledgeUnitItem {
+        var payload: [String: Any] = [:]
+        if let title { payload["title"] = title }
+        if let summary { payload["summary"] = summary }
+        return try await send(
+            "/api/knowledge/units/\(id)",
+            method: "PATCH",
+            json: payload
+        )
+    }
+
+    func createPointFromUnit(id: String) async throws -> CreatePointResponse {
+        try await send(
+            "/api/knowledge/units/\(id)/create-point",
+            method: "POST",
+            json: [:]
+        )
+    }
+
+    func skills(status: String? = nil) async throws -> [SkillItem] {
+        var query = ["limit": "300"]
+        if let status, !status.isEmpty { query["status"] = status }
+        return try await get("/api/knowledge/skills", query: query)
+    }
+
+    func updateSkillStatus(id: String, status: String) async throws -> SkillItem {
+        try await send(
+            "/api/knowledge/skills/\(id)",
+            method: "PATCH",
+            json: ["status": status]
+        )
+    }
+
+    func updateSkill(
+        id: String,
+        name: String?,
+        summary: String?
+    ) async throws -> SkillItem {
+        var payload: [String: Any] = [:]
+        if let name { payload["name"] = name }
+        if let summary { payload["summary"] = summary }
+        return try await send(
+            "/api/knowledge/skills/\(id)",
+            method: "PATCH",
+            json: payload
+        )
+    }
+
+    func extractMaterialUnits(materialId: String) async throws -> ExtractionResult {
+        try await send(
+            "/api/knowledge/extract/\(materialId)",
+            method: "POST",
+            json: [:]
+        )
+    }
+
+    func skillMap() async throws -> SkillMapResponse {
+        try await get("/api/knowledge/skill-map", query: ["user_id": userId])
+    }
+
+    func skillDetail(id: String) async throws -> SkillDetailResponse {
+        try await get("/api/knowledge/skills/\(id)")
+    }
+
+    nonisolated func frameURL(_ path: String) -> URL? {
+        guard !path.isEmpty else { return nil }
+        return URL(string: baseURLString + path)
     }
 
     func uploadMaterial(data: Data, filename: String, mimeType: String) async throws -> MaterialItem {

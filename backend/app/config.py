@@ -22,15 +22,18 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite+aiosqlite:///{DATA_DIR / 'app.db'}"
     adk_database_url: str = ""
     cors_origins: str = "http://localhost:3000"
+    public_base_url: str = ""
     default_user_id: str = "local-user"
     mock_llm: bool = False
     enable_scheduler: bool = True
+    enable_knowledge_extraction: bool = True
 
     llm_api_base: str = ""
     llm_api_key: str = ""
     llm_default_model: str = ""
     llm_embedding_model: str = ""
     tavily_api_key: str = ""
+    asr_local_model: str = "small"
 
     max_upload_bytes: int = 50 * 1024 * 1024
     max_url_bytes: int = 5 * 1024 * 1024

@@ -1,16 +1,23 @@
 import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 final class SpeechReader: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var speakingId: String?
-    private let synthesizer = AVSpeechSynthesizer()
+    private var synthesizer: AVSpeechSynthesizer?
 
-    override init() {
-        super.init()
-        synthesizer.delegate = self
+    private func engine() -> AVSpeechSynthesizer {
+        if let synthesizer {
+            return synthesizer
+        }
+        let created = AVSpeechSynthesizer()
+        created.delegate = self
+        synthesizer = created
+        return created
     }
 
     func toggle(id: String, text: String) {
+        let synthesizer = engine()
         if speakingId == id {
             synthesizer.stopSpeaking(at: .immediate)
             speakingId = nil
@@ -38,6 +45,9 @@ struct ChatView: View {
     @StateObject private var speech = SpeechReader()
     @State private var input = ""
     @State private var showSessions = false
+    @State private var showImporter = false
+    @State private var uploading = false
+    @State private var uploadError: String?
 
     private let quickPrompts = [
         "我最近学得怎么样？帮我看看学情。",
@@ -84,6 +94,26 @@ struct ChatView: View {
             .sheet(isPresented: $showSessions) {
                 SessionsSheet()
                     .environmentObject(store)
+            }
+            .fileImporter(
+                isPresented: $showImporter,
+                allowedContentTypes: [.pdf, .plainText, .image, .audio, .movie, .data],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    if let url = urls.first { Task { await upload(url) } }
+                case .failure(let failure):
+                    uploadError = failure.localizedDescription
+                }
+            }
+            .alert("上传失败", isPresented: Binding(
+                get: { uploadError != nil },
+                set: { if !$0 { uploadError = nil } }
+            )) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(uploadError ?? "")
             }
         }
     }
@@ -190,6 +220,21 @@ struct ChatView: View {
 
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            Button {
+                showImporter = true
+            } label: {
+                Group {
+                    if uploading {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "paperclip")
+                    }
+                }
+                .frame(width: 36, height: 40)
+                .foregroundStyle(Theme.muted)
+            }
+            .disabled(uploading)
+
             TextField("问辅导员，或者说出你想做的事…", text: $input, axis: .vertical)
                 .lineLimit(1...4)
                 .padding(.horizontal, 12)
@@ -206,8 +251,8 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "stop.fill")
                         .frame(width: 40, height: 40)
-                        .background(Theme.ink)
-                        .foregroundStyle(.white)
+                        .background(Theme.solid)
+                        .foregroundStyle(Theme.onSolid)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
             } else {
@@ -222,7 +267,10 @@ struct ChatView: View {
                             input.trimmingCharacters(in: .whitespaces).isEmpty
                                 ? Theme.line : Theme.accent
                         )
-                        .foregroundStyle(.white)
+                        .foregroundStyle(
+                            input.trimmingCharacters(in: .whitespaces).isEmpty
+                                ? Theme.muted : Theme.onAccent
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -231,6 +279,31 @@ struct ChatView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(Theme.paper)
+    }
+
+    private func upload(_ url: URL) async {
+        uploading = true
+        defer { uploading = false }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            let type = UTType(filenameExtension: url.pathExtension)
+            let material = try await APIClient.shared.uploadMaterial(
+                data: data,
+                filename: url.lastPathComponent,
+                mimeType: type?.preferredMIMEType ?? "application/octet-stream"
+            )
+            store.messages.append(
+                ChatMessage(
+                    role: .system,
+                    author: "collector",
+                    content: "已上传《\(material.title)》，入库完成后可在「知识 → 资料」查看。"
+                )
+            )
+        } catch {
+            uploadError = error.localizedDescription
+        }
     }
 }
 
@@ -254,10 +327,10 @@ private struct MessageRow: View {
                 Spacer(minLength: 40)
                 Text(message.content)
                     .font(.subheadline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onSolid)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(Theme.ink)
+                    .background(Theme.solid)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
         case .assistant:
@@ -298,9 +371,7 @@ private struct MessageRow: View {
                         ProgressView()
                             .controlSize(.small)
                     } else if !message.content.isEmpty {
-                        Text(message.content)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.ink)
+                        MarkdownText(content: message.content)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Theme.paper)

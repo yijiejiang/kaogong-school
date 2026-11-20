@@ -20,11 +20,13 @@ from app.db.models import (
     ExamQuestion,
     Mastery,
     Question,
+    SkillMastery,
     utcnow,
 )
 from app.schemas.settings import LlmSettings
 from app.services.llm import normalize_model, role_model_config
 from app.services.settings_service import load_llm_settings
+from app.services.skill_matching import load_skill_index, match_skills
 
 logger = logging.getLogger(__name__)
 
@@ -301,9 +303,12 @@ async def grade_attempt(
 ) -> dict:
     llm = await load_llm_settings(db)
     answer_by_question = {row.question_id: row for row in answer_rows}
+    skill_index = await load_skill_index(db)
     mastery_before: dict[str, dict] = {}
     mastery_rows: dict[str, Mastery] = {}
     mastery_accum: dict[str, dict] = {}
+    skill_accum: dict[str, dict] = {}
+    skill_before: dict[str, dict] = {}
 
     feedbacks: list[dict] = []
     score_total = 0.0
@@ -360,6 +365,30 @@ async def grade_attempt(
         else:
             wrong_count += 1
 
+        matched_skills = match_skills(
+            f"{question.stem}\n{question.explanation}",
+            question.knowledge_point_id,
+            skill_index,
+        )
+        if question.skill_id:
+            forced = next(
+                (
+                    item
+                    for item in skill_index.get(
+                        question.knowledge_point_id, []
+                    )
+                    if item["id"] == question.skill_id
+                ),
+                None,
+            )
+            if forced is not None:
+                matched_skills = [forced] + [
+                    item
+                    for item in matched_skills
+                    if item["id"] != forced["id"]
+                ]
+        primary_skill = matched_skills[0] if matched_skills else None
+
         feedback = {
             "question_id": question.id,
             "order_index": link.order_index,
@@ -379,6 +408,7 @@ async def grade_attempt(
             "missed_points": missed_points,
             "comment": comment,
             "variants": [] if is_correct else _variants_for(question),
+            "skills": matched_skills,
         }
         feedbacks.append(feedback)
 
@@ -389,6 +419,17 @@ async def grade_attempt(
         )
         bucket["scores"].append(score / link.score if link.score else 0.0)
         bucket["correct"] += 1 if is_correct else 0
+
+        if primary_skill is not None:
+            skill_id = primary_skill["id"]
+            skill_bucket = skill_accum.setdefault(
+                skill_id,
+                {"name": primary_skill["name"], "scores": [], "correct": 0},
+            )
+            skill_bucket["scores"].append(
+                score / link.score if link.score else 0.0
+            )
+            skill_bucket["correct"] += 1 if is_correct else 0
 
         if not is_correct:
             existing_error = (
@@ -451,6 +492,47 @@ async def grade_attempt(
         mastery.knowledge_point_name = bucket["name"]
         mastery_rows[kp_id] = mastery
 
+    skill_rows: dict[str, SkillMastery] = {}
+    for skill_id, bucket in skill_accum.items():
+        row_id = f"{attempt.user_id}:{skill_id}"
+        mastery = await db.get(SkillMastery, row_id)
+        if mastery is None:
+            mastery = SkillMastery(
+                id=row_id,
+                user_id=attempt.user_id,
+                skill_id=skill_id,
+                skill_name=bucket["name"],
+                score=50.0,
+                attempts=0,
+                correct=0,
+            )
+            db.add(mastery)
+        old_score = mastery.score if mastery.score is not None else 50.0
+        skill_before[skill_id] = {
+            "skill_id": skill_id,
+            "skill_name": bucket["name"],
+            "before": round(old_score, 1),
+        }
+        scores = bucket["scores"]
+        average = sum(scores) / len(scores) if scores else 0.0
+        mastery.score = round(
+            max(0.0, min(100.0, old_score * 0.7 + average * 100 * 0.3)), 1
+        )
+        mastery.attempts = (mastery.attempts or 0) + len(scores)
+        mastery.correct = (mastery.correct or 0) + bucket["correct"]
+        mastery.last_practiced = utcnow()
+        mastery.skill_name = bucket["name"]
+        skill_rows[skill_id] = mastery
+
+    skill_changes = [
+        {
+            **before,
+            "after": skill_rows[skill_id].score,
+            "attempts": skill_rows[skill_id].attempts,
+        }
+        for skill_id, before in skill_before.items()
+    ]
+
     total_score = sum(link.score for link, _ in rows)
     mastery_changes = [
         {
@@ -476,6 +558,7 @@ async def grade_attempt(
         "submitted_at": utcnow().isoformat(),
         "questions": feedbacks,
         "mastery_changes": mastery_changes,
+        "skill_changes": skill_changes,
         "error_book_added": wrong_count,
         "summary": (
             f"得分 {score_total:.1f}/{total_score:.1f}，"

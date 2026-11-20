@@ -82,6 +82,7 @@ class QuestionFeedback(BaseModel):
     missed_points: list[str] = Field(default_factory=list)
     comment: str = ""
     variants: list[dict] = Field(default_factory=list)
+    skills: list[dict] = Field(default_factory=list)
 
 
 class MasteryChange(BaseModel):
@@ -102,6 +103,7 @@ class AttemptReport(BaseModel):
     submitted_at: str | None = None
     questions: list[QuestionFeedback] = Field(default_factory=list)
     mastery_changes: list[MasteryChange] = Field(default_factory=list)
+    skill_changes: list[dict] = Field(default_factory=list)
     error_book_added: int = 0
     summary: str = ""
 

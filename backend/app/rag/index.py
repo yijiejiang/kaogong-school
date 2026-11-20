@@ -9,7 +9,13 @@ from dataclasses import dataclass
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Chunk, KnowledgeCard, KnowledgePoint, Material
+from app.db.models import (
+    Chunk,
+    KnowledgeCard,
+    KnowledgePoint,
+    KnowledgeUnit,
+    Material,
+)
 from app.rag.embeddings import EmbeddingService, cosine_similarity
 from app.rag.tagging import TagResult
 from app.rag.text import keyword_score, truncate
@@ -19,8 +25,12 @@ from app.rag.text import keyword_score, truncate
 class TaggedChunk:
     content: str
     heading: str
+    heading_path: str
     page: int | None
     tag: TagResult
+    time_start: float | None = None
+    time_end: float | None = None
+    frame_path: str = ""
 
 
 async def replace_chunks(
@@ -31,6 +41,9 @@ async def replace_chunks(
     embedding_name: str,
 ) -> int:
     await db.execute(delete(Chunk).where(Chunk.material_id == material.id))
+    await db.execute(
+        delete(KnowledgeUnit).where(KnowledgeUnit.material_id == material.id)
+    )
 
     seen_hashes: set[str] = set()
     inserted = 0
@@ -50,12 +63,18 @@ async def replace_chunks(
                 embedding_dim=len(vector),
                 embedding_model=embedding_name,
                 page=chunk.page,
+                time_start=chunk.time_start,
+                time_end=chunk.time_end,
+                frame_path=chunk.frame_path,
                 heading=chunk.heading,
+                heading_path=chunk.heading_path,
+                chunk_type=chunk.tag.chunk_type,
                 subject=chunk.tag.subject,
                 module=chunk.tag.module,
                 knowledge_point_id=chunk.tag.knowledge_point_id,
                 knowledge_point_name=chunk.tag.knowledge_point_name,
                 tags_json=json.dumps(chunk.tag.tags, ensure_ascii=False),
+                labels_json=chunk.tag.labels_json(),
             )
         )
         inserted += 1
@@ -75,12 +94,26 @@ def _chunk_hit(chunk: Chunk, material: Material, score: float) -> dict:
         tags = json.loads(chunk.tags_json or "[]")
     except json.JSONDecodeError:
         tags = []
+    try:
+        labels = json.loads(chunk.labels_json or "[]")
+    except json.JSONDecodeError:
+        labels = []
     return {
         "chunk_id": chunk.id,
         "material_id": chunk.material_id,
         "material_title": material.title,
         "page": chunk.page,
+        "time_start": chunk.time_start,
+        "time_end": chunk.time_end,
+        "frame_url": (
+            f"/api/materials/{chunk.material_id}/frames/"
+            f"{chunk.frame_path.rsplit('/', 1)[-1]}"
+            if chunk.frame_path
+            else ""
+        ),
         "heading": chunk.heading,
+        "heading_path": chunk.heading_path,
+        "chunk_type": chunk.chunk_type,
         "content": truncate(chunk.content, 500),
         "score": round(score, 4),
         "subject": chunk.subject,
@@ -88,6 +121,7 @@ def _chunk_hit(chunk: Chunk, material: Material, score: float) -> dict:
         "knowledge_point_id": chunk.knowledge_point_id,
         "knowledge_point_name": chunk.knowledge_point_name,
         "tags": tags,
+        "labels": labels,
     }
 
 
@@ -149,11 +183,14 @@ async def search_knowledge(
         module=module,
         top_k=top_k * 2,
     )
-    chunk_point_ids = {
-        chunk["knowledge_point_id"]
-        for chunk in chunks
-        if chunk.get("knowledge_point_id")
-    }
+    chunk_point_ids: set[str] = set()
+    for chunk in chunks:
+        if chunk.get("knowledge_point_id"):
+            chunk_point_ids.add(chunk["knowledge_point_id"])
+        for label in chunk.get("labels") or []:
+            label_id = label.get("knowledge_point_id")
+            if label_id:
+                chunk_point_ids.add(label_id)
 
     cards_result = await db.execute(select(KnowledgeCard))
     scored_cards: list[tuple[float, KnowledgeCard]] = []

@@ -51,6 +51,8 @@ class LlmSettings(BaseModel):
     asr_model: str = ""
     asr_api_base: str = ""
     asr_api_key: str = ""
+    deepseek_api_base: str = ""
+    deepseek_api_key: str = ""
     input_price_per_m: float = 0.0
     output_price_per_m: float = 0.0
     roles: dict[str, RoleModelConfig] = Field(default_factory=dict)
@@ -69,6 +71,9 @@ class LlmSettingsPublic(BaseModel):
     asr_api_base: str = ""
     asr_api_key: str = ""
     asr_api_key_set: bool = False
+    deepseek_api_base: str = ""
+    deepseek_api_key: str = ""
+    deepseek_api_key_set: bool = False
     input_price_per_m: float = 0.0
     output_price_per_m: float = 0.0
     roles: dict[str, RoleModelConfigPublic] = Field(default_factory=dict)

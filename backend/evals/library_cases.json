@@ -1,0 +1,68 @@
+{
+  "tagging": [
+    {
+      "text": "资料分析速算技巧：截位直除。分母截取前三位，分子按同比例截位，再直接相除。",
+      "expected_kp": "xingce-ziliao-susuan",
+      "expected_type": "method"
+    },
+    {
+      "text": "增长率=(现期-基期)÷基期；基期=现期÷(1+增长率)；增长量=现期-基期。",
+      "expected_kp": "xingce-ziliao-zengzhang",
+      "expected_type": "formula"
+    },
+    {
+      "text": "常见陷阱：截位方向不一致；选项差距小还过度截位；差分法正负号写错。",
+      "expected_kp": "xingce-ziliao-susuan",
+      "expected_type": "trap"
+    },
+    {
+      "text": "图形推理先看图形组成是否相同，相同看位置规律，不同看数量规律。",
+      "expected_kp": "xingce-panduan-tuxing",
+      "expected_type": "method"
+    },
+    {
+      "text": "逻辑填空要关注语境、呼应点和感情色彩，再辨析词语的搭配范围。",
+      "expected_kp": "xingce-yanyu-luoji",
+      "expected_type": "method"
+    },
+    {
+      "text": "定义判断是指抓住被定义项的关键信息，逐项核对要件是否满足。",
+      "expected_kp": "xingce-panduan-dingyi",
+      "expected_type": "definition"
+    },
+    {
+      "text": "归纳概括题：先审题，再回到材料找要点，最后同义合并、分条书写。",
+      "expected_kp": "shenlun-guina",
+      "expected_type": "method"
+    },
+    {
+      "text": "比重=部分÷整体；现期比重=A/B；基期比重=A/B×(1+b)/(1+a)。",
+      "expected_kp": "xingce-ziliao-bizhong",
+      "expected_type": "formula"
+    },
+    {
+      "text": "行政处罚是指行政机关依法对违反行政管理秩序的公民、法人或其他组织给予制裁的行为。",
+      "expected_kp": "xingce-changshi-falv",
+      "expected_type": "definition"
+    },
+    {
+      "text": "文章写作要先立意准确，再搭建分论点，最后用材料和事例展开论证。",
+      "expected_kp": "shenlun-zuowen",
+      "expected_type": "method"
+    }
+  ],
+  "retrieval": [
+    {
+      "query": "截位直除怎么做",
+      "expected_kp": "xingce-ziliao-susuan"
+    },
+    {
+      "query": "差分法怎么比较两个分数",
+      "expected_kp": "xingce-ziliao-susuan"
+    },
+    {
+      "query": "特征数字 1/6 等于多少",
+      "expected_kp": "xingce-ziliao-susuan"
+    }
+  ]
+}

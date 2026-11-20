@@ -12,7 +12,13 @@ from typing import Protocol
 import httpx
 import yt_dlp
 
+from app.config import get_settings
 from app.schemas.settings import LlmSettings
+from app.services.deepseek_tools import (
+    DeepSeekConfig,
+    DeepSeekError,
+    transcribe_audio,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +50,7 @@ class AsrResult:
     text: str
     provider: str
     model: str
+    segments: list[tuple[float, float, str]] | None = None
 
 
 class Transcriber(Protocol):
@@ -143,16 +150,44 @@ async def _transcribe_via_api(
 def _transcribe_local_sync(path: Path, language: str) -> AsrResult:
     from faster_whisper import WhisperModel
 
-    model_name = os.getenv("ASR_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
+    model_name = (
+        get_settings().asr_local_model.strip()
+        or os.getenv("ASR_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
+    )
     model = WhisperModel(model_name, device="auto", compute_type="int8")
     language_code = "zh" if language.lower().startswith("zh") else None
     segments, _info = model.transcribe(
-        str(path), language=language_code, vad_filter=True
+        str(path),
+        language=language_code,
+        vad_filter=True,
+        initial_prompt=(
+            "以下是普通话简体中文的公务员考试课程讲解，涉及资料分析、"
+            "数量关系、科学推理。常见术语：基期量、现期量、增长量、"
+            "增长率、比重、平均数、截位直除、化同法、假设分配法、"
+            "415份数法、排列组合、工程问题、行程问题、几何、"
+            "科学推理、物理、化学、生物。"
+            if language_code == "zh"
+            else None
+        ),
     )
-    text = "".join(segment.text for segment in segments).strip()
+    items = list(segments)
+    text = "".join(segment.text for segment in items).strip()
     if not text:
         raise AsrError("本地语音转写没有识别到文字。")
-    return AsrResult(text=text, provider="local", model=f"faster-whisper:{model_name}")
+    return AsrResult(
+        text=text,
+        provider="local",
+        model=f"faster-whisper:{model_name}",
+        segments=[
+            (
+                float(segment.start),
+                float(segment.end),
+                str(segment.text or "").strip(),
+            )
+            for segment in items
+            if str(segment.text or "").strip()
+        ],
+    )
 
 
 async def transcribe_file(
@@ -160,8 +195,17 @@ async def transcribe_file(
     llm: LlmSettings,
     filename: str | None = None,
     language: str = "zh",
+    deepseek: DeepSeekConfig | None = None,
 ) -> AsrResult:
     name = filename or path.name
+    if deepseek and deepseek.ready and path.stat().st_size <= 8 * 1024 * 1024:
+        try:
+            text = await transcribe_audio(deepseek, path, name)
+            return AsrResult(text=text, provider="deepseek", model="deepseek-asr")
+        except DeepSeekError as exc:
+            logger.warning(
+                "DeepSeek ASR failed, falling back to configured ASR: %s", exc
+            )
     if api_configured(llm):
         try:
             return await _transcribe_via_api(path, name, llm, language)

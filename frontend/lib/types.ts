@@ -49,6 +49,9 @@ export type SettingsBundle = {
     asr_api_base: string;
     asr_api_key: string;
     asr_api_key_set: boolean;
+    deepseek_api_base: string;
+    deepseek_api_key: string;
+    deepseek_api_key_set: boolean;
     input_price_per_m: number;
     output_price_per_m: number;
     roles: Record<string, RoleModelConfig>;
@@ -78,6 +81,8 @@ export type SettingsPayload = {
     asr_model: string;
     asr_api_base: string;
     asr_api_key: string;
+    deepseek_api_base: string;
+    deepseek_api_key: string;
     input_price_per_m: number;
     output_price_per_m: number;
     roles: Record<string, RoleModelConfig>;
@@ -109,17 +114,33 @@ export type Material = {
   updated_at: string;
 };
 
+export type ChunkLabel = {
+  knowledge_point_id: string;
+  knowledge_point_name: string;
+  subject: string;
+  module: string;
+  score: number;
+  confidence: number;
+  tags: string[];
+};
+
 export type MaterialChunk = {
   id: string;
   chunk_index: number;
   content: string;
   page: number | null;
+  time_start: number | null;
+  time_end: number | null;
+  frame_url: string;
   heading: string;
+  heading_path: string;
+  chunk_type: string;
   subject: string;
   module: string;
   knowledge_point_id: string;
   knowledge_point_name: string;
   tags: string[];
+  labels: ChunkLabel[];
 };
 
 export type MaterialDetail = {
@@ -132,7 +153,12 @@ export type SearchHit = {
   material_id: string;
   material_title: string;
   page: number | null;
+  time_start: number | null;
+  time_end: number | null;
+  frame_url: string;
   heading: string;
+  heading_path: string;
+  chunk_type: string;
   content: string;
   score: number;
   subject: string;
@@ -140,6 +166,7 @@ export type SearchHit = {
   knowledge_point_id: string;
   knowledge_point_name: string;
   tags: string[];
+  labels: ChunkLabel[];
 };
 
 export type KnowledgeCardHit = {
@@ -166,6 +193,140 @@ export type KnowledgeNode = {
   description: string;
   keywords: string[];
   chunk_count: number;
+};
+
+export type KnowledgeEvidence = {
+  page?: number | null;
+  quote?: string;
+};
+
+export type SkillConnection = {
+  name: string;
+  relation: string;
+  knowledge_point_id: string;
+};
+
+export type KnowledgeUnit = {
+  id: string;
+  material_id: string;
+  chunk_id: string;
+  chunk_type: string;
+  title: string;
+  summary: string;
+  definition: string;
+  conditions: string[];
+  steps: string[];
+  pitfalls: string[];
+  examples: string[];
+  exam_pattern: string;
+  signals: string[];
+  variants: string[];
+  connections: SkillConnection[];
+  question_design: string[];
+  knowledge_point_id: string;
+  knowledge_point_name: string;
+  skill_name: string;
+  skill_id: string;
+  proposed_knowledge_point: string;
+  proposed_parent_id: string;
+  proposed_reason: string;
+  confidence: number;
+  status: string;
+  evidence: KnowledgeEvidence[];
+  extraction_model: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Skill = {
+  id: string;
+  name: string;
+  normalized_name: string;
+  subject: string;
+  module: string;
+  knowledge_point_id: string;
+  knowledge_point_name: string;
+  summary: string;
+  conditions: string[];
+  steps: string[];
+  pitfalls: string[];
+  examples: string[];
+  exam_patterns: string[];
+  signals: string[];
+  variants: string[];
+  connections: SkillConnection[];
+  question_design: string[];
+  difficulty: number;
+  source_unit_ids: string[];
+  confidence: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExtractionResult = {
+  status: string;
+  units: number;
+  skills: number;
+  new_skills: number;
+  proposals: number;
+  model: string;
+  warning: string;
+};
+
+export type SkillMapItem = {
+  id: string;
+  name: string;
+  subject: string;
+  module: string;
+  knowledge_point_id: string;
+  knowledge_point_name: string;
+  summary: string;
+  confidence: number;
+  difficulty: number;
+  status: string;
+  mastery_status: string;
+  mastery_label: string;
+  mastery_source: "skill" | "knowledge_point" | "none";
+  score: number | null;
+  attempts: number;
+  correct: number;
+  due_at: string | null;
+  source_unit_count: number;
+  source_material_count: number;
+  exam_patterns: string[];
+  signals: string[];
+  variants: string[];
+  question_design: string[];
+  connections: SkillConnection[];
+  steps: string[];
+  pitfalls: string[];
+};
+
+export type SkillMapModule = {
+  subject: string;
+  module: string;
+  counts: Record<string, number>;
+  average_score: number | null;
+  skills: SkillMapItem[];
+};
+
+export type SkillMap = {
+  user_id: string;
+  summary: Record<string, number>;
+  subjects: SkillMapModule[];
+};
+
+export type SkillDetail = {
+  skill: Skill;
+  units: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    material_id: string;
+    material_title: string;
+    status: string;
+  }>;
 };
 
 export type ExamQuestionType = "single" | "multiple" | "short";
@@ -239,6 +400,17 @@ export type FeedbackVariant = {
   explanation: string;
 };
 
+export type FeedbackSkill = {
+  id: string;
+  name: string;
+  summary: string;
+  exam_patterns: string[];
+  signals: string[];
+  steps: string[];
+  pitfalls: string[];
+  variants: string[];
+};
+
 export type QuestionFeedback = {
   question_id: string;
   order_index: number;
@@ -258,6 +430,7 @@ export type QuestionFeedback = {
   missed_points: string[];
   comment: string;
   variants: FeedbackVariant[];
+  skills: FeedbackSkill[];
 };
 
 export type MasteryChange = {
@@ -278,6 +451,13 @@ export type AttemptReport = {
   submitted_at: string | null;
   questions: QuestionFeedback[];
   mastery_changes: MasteryChange[];
+  skill_changes?: Array<{
+    skill_id: string;
+    skill_name: string;
+    before: number;
+    after: number;
+    attempts: number;
+  }>;
   error_book_added: number;
   summary: string;
 };
@@ -483,4 +663,12 @@ export type ModelListResult = {
   models: ModelInfo[];
   count: number;
   base_url: string;
+};
+
+export type ConnectInfo = {
+  api_base: string;
+  source: "public" | "lan" | "custom";
+  port: number;
+  ips: string[];
+  payload: string;
 };
