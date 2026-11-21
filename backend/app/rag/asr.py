@@ -22,6 +22,19 @@ from app.services.deepseek_tools import (
 
 logger = logging.getLogger(__name__)
 
+_asr_seconds: list[float] = []
+
+
+def record_asr_seconds(seconds: float) -> None:
+    if seconds > 0:
+        _asr_seconds.append(float(seconds))
+
+
+def drain_asr_seconds() -> float:
+    total = sum(_asr_seconds)
+    _asr_seconds.clear()
+    return total
+
 AUDIO_SUFFIXES = {
     ".mp3",
     ".m4a",
@@ -200,7 +213,8 @@ async def transcribe_file(
     name = filename or path.name
     if deepseek and deepseek.ready and path.stat().st_size <= 8 * 1024 * 1024:
         try:
-            text = await transcribe_audio(deepseek, path, name)
+            text, duration = await transcribe_audio(deepseek, path, name)
+            record_asr_seconds(duration)
             return AsrResult(text=text, provider="deepseek", model="deepseek-asr")
         except DeepSeekError as exc:
             logger.warning(

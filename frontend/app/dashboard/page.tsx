@@ -440,12 +440,15 @@ function UsageCard({ usage }: { usage: UsageSummary | null }) {
         <div>
           <h2 className="text-base font-semibold">模型用量与成本</h2>
           <p className="mt-1 text-xs text-muted">
-            按角色统计真实 API token 用量；成本按设置页填写的单价估算。
+            按角色统计真实 API token 用量；平台包月渠道不计单次费用，DeepSeek 等按量服务按官方价格估算。
           </p>
         </div>
-        <span className="rounded-full bg-[#f1ece2] px-2.5 py-1 text-[10px] text-muted">
-          最近 {usage?.days ?? 14} 天
-        </span>
+        <Link
+          href="/cost"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 py-1 text-[10px] font-medium text-ink transition hover:border-[#cfc4b5]"
+        >
+          查看费用
+        </Link>
       </div>
 
       {!hasUsage ? (

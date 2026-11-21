@@ -34,6 +34,13 @@ struct DashboardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        CostView()
+                    } label: {
+                        Image(systemName: "wallet.pass")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await load() }
                     } label: {

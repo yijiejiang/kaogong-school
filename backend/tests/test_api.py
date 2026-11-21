@@ -1188,7 +1188,7 @@ async def test_deepseek_asr_preferred(monkeypatch, tmp_path) -> None:
     path.write_bytes(b"RIFF")
 
     async def fake_transcribe(config, file_path, filename=None):
-        return "这是语音转写结果"
+        return "这是语音转写结果", 12.5
 
     monkeypatch.setattr(asr, "transcribe_audio", fake_transcribe)
     result = await asr.transcribe_file(
@@ -1356,3 +1356,66 @@ async def test_create_point_from_unit_proposal() -> None:
             )
         ).scalar_one()
         assert point.parent_id == "xingce-ziliao-susuan"
+
+
+def test_deepseek_cost_catalog() -> None:
+    from datetime import datetime
+
+    from app.services.pricing import (
+        BEIJING,
+        deepseek_tier,
+        is_peak,
+        llm_cost,
+        resolve_mode,
+        service_cost,
+    )
+
+    assert deepseek_tier("deepseek-v4.1-flash") == "flash"
+    assert deepseek_tier("openai/deepseek-v4-pro") == "pro"
+    assert deepseek_tier("gpt-6-luna") is None
+
+    peak = datetime(2026, 11, 18, 10, 0, tzinfo=BEIJING)
+    idle = datetime(2026, 11, 21, 10, 0, tzinfo=BEIJING)
+    assert is_peak(peak)
+    assert not is_peak(idle)
+
+    flash_peak = llm_cost(
+        "deepseek",
+        "deepseek-v4.1-flash",
+        1_000_000,
+        1_000_000,
+        moment=peak,
+    )
+    assert flash_peak.cost == 10.0
+    assert flash_peak.billing_mode == "payg"
+
+    pro_idle = llm_cost(
+        "deepseek", "deepseek-v4-pro", 1_000_000, 0, moment=idle
+    )
+    assert pro_idle.cost == 4.5
+
+    monthly = resolve_mode("open-design.ai", {"default": "monthly"})
+    assert monthly == "monthly"
+    # DeepSeek 官方始终按量计费
+    assert resolve_mode("deepseek", {"default": "monthly"}) == "payg"
+
+    search = service_cost("deepseek", "search", 1000)
+    assert search.cost == 5.0
+    ocr = service_cost("deepseek", "ocr", 2000)
+    assert ocr.cost == 3.0
+
+
+def test_usage_summary_includes_provider_cost() -> None:
+    with TestClient(app) as client:
+        body = client.get(
+            "/api/analytics/usage", params={"user_id": "pytest-cost", "days": 7}
+        ).json()
+        assert "by_provider" in body
+        assert "by_service" in body
+        assert body["totals"]["monthly_services"] == 0
+
+        billing = client.get(
+            "/api/analytics/billing", params={"user_id": "pytest-cost"}
+        ).json()
+        assert any(item["value"] == "monthly" for item in billing["modes"])
+        assert "deepseek" in billing["price_catalog"]

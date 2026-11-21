@@ -9,6 +9,7 @@ import {
   Plus,
   Settings,
   Sparkles,
+  Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -123,6 +124,13 @@ export function Sidebar({
           >
             <BarChart3 className="h-4 w-4" />
             学情看板
+          </Link>
+          <Link
+            href="/cost"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-[#5f5a4d] transition hover:bg-[#e7e1d6]"
+          >
+            <Wallet className="h-4 w-4" />
+            费用
           </Link>
           <Link
             href="/settings"

@@ -618,11 +618,13 @@ struct UsageSummary: Decodable {
         let requests: Int
         let totalTokens: Int
         let cost: Double
+        let monthlyServices: Int
 
         enum CodingKeys: String, CodingKey {
             case requests
             case totalTokens = "total_tokens"
             case cost
+            case monthlyServices = "monthly_services"
         }
     }
 
@@ -640,12 +642,48 @@ struct UsageSummary: Decodable {
         }
     }
 
+    struct Provider: Decodable, Identifiable {
+        let provider: String
+        let providerLabel: String
+        let requests: Int
+        let totalTokens: Int
+        let cost: Double
+        let billingMode: String
+        let billingLabel: String
+
+        var id: String { provider }
+
+        enum CodingKeys: String, CodingKey {
+            case provider
+            case providerLabel = "provider_label"
+            case requests
+            case totalTokens = "total_tokens"
+            case cost
+            case billingMode = "billing_mode"
+            case billingLabel = "billing_label"
+        }
+    }
+
+    struct Service: Decodable, Identifiable {
+        let service: String
+        let label: String
+        let units: Double
+        let requests: Int
+        let cost: Double
+
+        var id: String { service }
+    }
+
     let totals: Totals
     let byRole: [Role]
+    let byProvider: [Provider]?
+    let byService: [Service]?
 
     enum CodingKeys: String, CodingKey {
         case totals
         case byRole = "by_role"
+        case byProvider = "by_provider"
+        case byService = "by_service"
     }
 }
 
@@ -1032,6 +1070,10 @@ struct SkillMapModule: Decodable, Identifiable {
     let subject: String
     let module: String
     let counts: [String: Int]
+    let health: Double?
+    let total: Int?
+    let needsWork: Int?
+    let weakRatio: Double?
     let averageScore: Double?
     let skills: [SkillMapSkill]
 
@@ -1041,6 +1083,10 @@ struct SkillMapModule: Decodable, Identifiable {
         case subject
         case module
         case counts
+        case health
+        case total
+        case needsWork = "needs_work"
+        case weakRatio = "weak_ratio"
         case averageScore = "average_score"
         case skills
     }
@@ -1050,11 +1096,13 @@ struct SkillMapResponse: Decodable {
     let userId: String
     let summary: [String: Int]
     let subjects: [SkillMapModule]
+    let headline: String?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case summary
         case subjects
+        case headline
     }
 }
 
@@ -1124,5 +1172,48 @@ struct CreatePointResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case status
         case knowledgePoint = "knowledge_point"
+    }
+}
+
+struct BillingOverview: Decodable {
+    struct Source: Decodable, Identifiable {
+        let provider: String
+        let label: String
+        let base: String
+        let service: String
+        let model: String
+        let billingMode: String
+        let billingLabel: String
+
+        var id: String { "\(provider)-\(service)" }
+
+        enum CodingKeys: String, CodingKey {
+            case provider
+            case label
+            case base
+            case service
+            case model
+            case billingMode = "billing_mode"
+            case billingLabel = "billing_label"
+        }
+    }
+
+    struct Mode: Decodable, Identifiable {
+        let value: String
+        let label: String
+
+        var id: String { value }
+    }
+
+    let userId: String
+    let defaultBilling: String
+    let modes: [Mode]
+    let sources: [Source]
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case defaultBilling = "default_billing"
+        case modes
+        case sources
     }
 }

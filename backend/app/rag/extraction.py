@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.db.models import Chunk, KnowledgePoint, KnowledgeUnit, Skill
 from app.schemas.settings import LlmSettings
 from app.services.llm import normalize_model, role_model_config
+from app.services.usage import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +397,24 @@ async def _llm_units(
         kwargs["api_key"] = endpoint.api_key
 
     response = await litellm.acompletion(**kwargs)
+    try:
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            await record_usage(
+                db,
+                user_id=get_settings().default_user_id,
+                session_id="",
+                role="knowledge",
+                model=endpoint.model,
+                prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+                completion_tokens=int(
+                    getattr(usage, "completion_tokens", 0) or 0
+                ),
+                llm=llm,
+                api_base=endpoint.api_base,
+            )
+    except Exception:
+        logger.warning("failed to record extraction usage", exc_info=True)
     choice = response.choices[0]
     if getattr(choice, "finish_reason", "") == "length":
         raise ExtractionError("LLM output truncated by token limit")

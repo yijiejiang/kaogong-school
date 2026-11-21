@@ -4,8 +4,10 @@ These endpoints live on api.deepseek.com and are independent from the chat
 model endpoint, so they can be used alongside an OpenAI-compatible proxy.
 """
 
+import asyncio
 import mimetypes
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -226,7 +228,8 @@ async def transcribe_audio(
     config: DeepSeekConfig,
     path: Path,
     filename: str | None = None,
-) -> str:
+) -> tuple[str, float]:
+    """Return the transcript and the billed audio duration in seconds."""
     if not config.ready:
         raise DeepSeekError("未配置 DeepSeek API Key。")
     name = filename or path.name
@@ -250,4 +253,33 @@ async def transcribe_audio(
     text = str(data.get("text") or "").strip()
     if not text:
         raise DeepSeekError("DeepSeek 语音识别没有返回文字。")
-    return text
+    try:
+        duration = float(data.get("duration_ms") or 0) / 1000
+    except (TypeError, ValueError):
+        duration = 0.0
+    if duration <= 0:
+        duration = await asyncio.to_thread(_probe_duration, path)
+    return text, max(duration, 0.0)
+
+
+def _probe_duration(path: Path) -> float:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=30,
+        )
+        return float(result.stdout.strip())
+    except Exception:  # noqa: BLE001 - duration is best effort
+        return 0.0

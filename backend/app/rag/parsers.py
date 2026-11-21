@@ -49,6 +49,22 @@ class ParsedDocument:
     kind: str = "file"
     mime_type: str = ""
     warning: str = ""
+    ocr_pages: int = 0
+
+
+# Collects paid OCR pages while parsing; ingestion drains this after the job.
+_ocr_budget: list[int] = []
+
+
+def record_ocr_pages(count: int) -> None:
+    if count > 0:
+        _ocr_budget.append(int(count))
+
+
+def drain_ocr_pages() -> int:
+    total = sum(_ocr_budget)
+    _ocr_budget.clear()
+    return total
 
 
 def sanitize_filename(filename: str) -> str:
@@ -90,6 +106,7 @@ def _parse_image(
             pages = ocr_file_sync(deepseek, path, filename)
             text = "\n\n".join(page_text for _, page_text in pages)
             warning = "DeepSeek OCR"
+            record_ocr_pages(len(pages))
         except DeepSeekError as exc:
             warning = f"{warning}；DeepSeek OCR 失败：{exc}"
     if not text.strip():
@@ -177,6 +194,7 @@ def _parse_pdf(
                 ocr_pages = ocr_file_sync(deepseek, path, filename)
                 pages = ocr_pages
                 warning = "扫描版 PDF 已使用 DeepSeek OCR。"
+                record_ocr_pages(len(ocr_pages))
             except DeepSeekError as exc:
                 warning = f"{warning} DeepSeek OCR 失败：{exc}"
 

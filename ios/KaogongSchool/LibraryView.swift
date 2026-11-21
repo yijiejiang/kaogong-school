@@ -369,6 +369,7 @@ private struct MaterialDetailView: View {
     @State private var error: String?
     @State private var busy = false
     @State private var showDelete = false
+    @State private var selectedChunk: MaterialChunk?
 
     var body: some View {
         Group {
@@ -422,7 +423,12 @@ private struct MaterialDetailView: View {
                                 .foregroundStyle(Theme.muted)
                         } else {
                             ForEach(detail.chunks) { chunk in
-                                MaterialChunkCard(chunk: chunk)
+                                Button {
+                                    selectedChunk = chunk
+                                } label: {
+                                    MaterialChunkCard(chunk: chunk)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -452,6 +458,12 @@ private struct MaterialDetailView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("会同时删除分块与索引，无法恢复。")
+        }
+        .sheet(item: $selectedChunk) { chunk in
+            ChunkDetailSheet(
+                chunk: chunk,
+                material: detail?.material
+            )
         }
     }
 
@@ -793,4 +805,107 @@ private func chunkTimeLabel(_ start: Double, _ end: Double?) -> String {
         return "\(format(start))–\(format(end))"
     }
     return format(start)
+}
+
+private struct ChunkDetailSheet: View {
+    let chunk: MaterialChunk
+    let material: MaterialItem?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 8) {
+                        Text("#\(chunk.chunkIndex + 1)")
+                            .font(.caption.bold())
+                            .foregroundStyle(Theme.muted)
+                        if let page = chunk.page {
+                            Text(material?.kind == "video" ? "幻灯片 \(page)" : "第 \(page) 页")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                        }
+                        if let start = chunk.timeStart {
+                            Text(chunkTimeLabel(start, chunk.timeEnd))
+                                .font(.caption)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Theme.accentSoft)
+                                .foregroundStyle(Theme.accent)
+                                .clipShape(Capsule())
+                        }
+                        Spacer()
+                    }
+                    Text(chunk.heading.isEmpty ? (material?.title ?? "分块详情") : chunk.heading)
+                        .font(.title3.bold())
+                    if !chunk.headingPath.isEmpty {
+                        Text(chunk.headingPath)
+                            .font(.caption2)
+                            .foregroundStyle(Theme.muted)
+                    }
+                    if let url = APIClient.shared.frameURL(chunk.frameURL) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFit()
+                        } placeholder: {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Theme.line.opacity(0.3))
+                                .frame(height: 160)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    MarkdownText(content: chunk.content)
+                        .font(.subheadline)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Theme.paper)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    if !chunk.labels.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("候选知识点").font(.caption.bold())
+                            ForEach(chunk.labels) { label in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack {
+                                        Text(label.knowledgePointName)
+                                            .font(.caption.weight(.medium))
+                                        Spacer()
+                                        Text("\(Int(label.confidence * 100))%")
+                                            .font(.caption2)
+                                            .foregroundStyle(Theme.muted)
+                                    }
+                                    Text("\(label.subject)\(label.module.isEmpty ? "" : " · \(label.module)")")
+                                        .font(.caption2)
+                                        .foregroundStyle(Theme.muted)
+                                    if !label.tags.isEmpty {
+                                        Text(label.tags.joined(separator: " · "))
+                                            .font(.caption2)
+                                            .foregroundStyle(Theme.accent)
+                                    }
+                                }
+                                .padding(9)
+                                .background(Theme.paper)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        LabeledContent("资料", value: material?.title ?? "—")
+                        LabeledContent("知识点", value: chunk.knowledgePointName.isEmpty ? "未归类" : chunk.knowledgePointName)
+                        if !chunk.tags.isEmpty {
+                            LabeledContent("标签", value: chunk.tags.joined(separator: "、"))
+                        }
+                    }
+                    .font(.caption)
+                }
+                .padding()
+            }
+            .navigationTitle("分块详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
 }

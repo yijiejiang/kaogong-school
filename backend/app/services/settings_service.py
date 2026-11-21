@@ -115,6 +115,7 @@ async def load_llm_settings(db: AsyncSession) -> LlmSettings:
         or os.getenv("DEEPSEEK_API_KEY", ""),
         input_price_per_m=float(data.get("input_price_per_m") or 0.0),
         output_price_per_m=float(data.get("output_price_per_m") or 0.0),
+        billing=data.get("billing") or {},
         roles=roles,
     )
 
@@ -181,6 +182,7 @@ async def save_llm_settings(db: AsyncSession, llm: LlmSettings) -> LlmSettings:
         "deepseek_api_key_enc": encrypt_secret(deepseek_key),
         "input_price_per_m": llm.input_price_per_m,
         "output_price_per_m": llm.output_price_per_m,
+        "billing": llm.billing or {},
         "roles": roles_payload,
     }
     await _write_json(db, LLM_KEY, payload)
@@ -198,6 +200,7 @@ async def save_llm_settings(db: AsyncSession, llm: LlmSettings) -> LlmSettings:
         deepseek_api_key=deepseek_key,
         input_price_per_m=payload["input_price_per_m"],
         output_price_per_m=payload["output_price_per_m"],
+        billing=payload["billing"],
         roles=roles,
     )
 
@@ -253,5 +256,6 @@ def to_public(llm: LlmSettings) -> LlmSettingsPublic:
         deepseek_api_key_set=bool(llm.deepseek_api_key),
         input_price_per_m=llm.input_price_per_m,
         output_price_per_m=llm.output_price_per_m,
+        billing=llm.billing or {},
         roles=roles,
     )

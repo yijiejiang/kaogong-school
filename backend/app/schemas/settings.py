@@ -55,6 +55,7 @@ class LlmSettings(BaseModel):
     deepseek_api_key: str = ""
     input_price_per_m: float = 0.0
     output_price_per_m: float = 0.0
+    billing: dict = Field(default_factory=dict)
     roles: dict[str, RoleModelConfig] = Field(default_factory=dict)
 
 
@@ -76,6 +77,7 @@ class LlmSettingsPublic(BaseModel):
     deepseek_api_key_set: bool = False
     input_price_per_m: float = 0.0
     output_price_per_m: float = 0.0
+    billing: dict = Field(default_factory=dict)
     roles: dict[str, RoleModelConfigPublic] = Field(default_factory=dict)
 
 

@@ -34,3 +34,13 @@ async def usage(
     days: int = 14,
 ) -> dict:
     return await build_usage_summary(db, user_id, days)
+
+
+@router.get("/billing")
+async def billing(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_id: str = "local-user",
+) -> dict:
+    from app.services.usage import build_billing_overview
+
+    return await build_billing_overview(db, user_id)

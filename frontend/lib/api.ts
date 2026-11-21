@@ -6,6 +6,7 @@ import type {
   AttemptStart,
   AttemptState,
   AttemptSummary,
+  BillingOverview,
   ChatMessage,
   ConnectInfo,
   ExamConfig,
@@ -393,6 +394,14 @@ export async function fetchUsage(
 ): Promise<UsageSummary> {
   return request(
     `/api/analytics/usage?user_id=${encodeURIComponent(userId)}&days=${days}`,
+  );
+}
+
+export async function fetchBilling(
+  userId = getUserId(),
+): Promise<BillingOverview> {
+  return request(
+    `/api/analytics/billing?user_id=${encodeURIComponent(userId)}`,
   );
 }
 

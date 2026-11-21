@@ -346,6 +346,14 @@ _MASTERY_LABELS = {
     "due": "待复习",
 }
 
+_MASTERY_ORDER = {
+    "due": 0,
+    "learning": 1,
+    "unpracticed": 2,
+    "practicing": 3,
+    "strong": 4,
+}
+
 
 def _mastery_label(status: str) -> str:
     return _MASTERY_LABELS.get(status, "不清楚")
@@ -489,22 +497,67 @@ async def skill_map(
             for key in ("strong", "practicing", "learning", "unpracticed", "due")
         }
         scored = [item["score"] for item in items if item["score"] is not None]
+        total = len(items)
+        # 0–100 健康度：熟练 100、会用 75、了解 50、不清楚 15、待复习 30
+        weights = {
+            "strong": 100,
+            "practicing": 75,
+            "learning": 50,
+            "unpracticed": 15,
+            "due": 30,
+        }
+        health = round(
+            sum(weights[key] * module_counts[key] for key in weights) / total,
+            1,
+        ) if total else 0.0
+        needs_work = (
+            module_counts["learning"]
+            + module_counts["unpracticed"]
+            + module_counts["due"]
+        )
         subjects.append(
             {
                 "subject": subject,
                 "module": module,
                 "counts": module_counts,
+                "health": health,
+                "total": total,
+                "needs_work": needs_work,
+                "weak_ratio": round(needs_work / total, 3) if total else 0.0,
                 "average_score": round(sum(scored) / len(scored), 1)
                 if scored
                 else None,
-                "skills": sorted(items, key=lambda item: item["name"]),
+                "skills": sorted(
+                    items,
+                    key=lambda item: (
+                        _MASTERY_ORDER.get(item["mastery_status"], 9),
+                        item["score"] if item["score"] is not None else 999,
+                        item["name"],
+                    ),
+                ),
             }
         )
-    subjects.sort(key=lambda item: (item["subject"], item["module"]))
+    subjects.sort(
+        key=lambda item: (item["health"], item["subject"], item["module"])
+    )
+    weakest = next(
+        (
+            item
+            for item in subjects
+            if item["module"] not in {"", "未分类"} and item["needs_work"]
+        ),
+        None,
+    )
     return {
         "user_id": user_id,
         "summary": summary,
         "subjects": subjects,
+        "headline": (
+            f"{weakest['subject']} · {weakest['module']} 最需要补："
+            f"{weakest['needs_work']} 项技能还没练熟"
+            if weakest
+            else "所有模块的技能都已练习过。"
+        ),
     }
 
 

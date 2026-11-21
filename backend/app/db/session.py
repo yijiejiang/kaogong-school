@@ -47,11 +47,20 @@ QUESTION_COLUMNS = {
     "skill_name": "VARCHAR(128) NOT NULL DEFAULT ''",
 }
 
+USAGE_COLUMNS = {
+    "provider": "VARCHAR(64) NOT NULL DEFAULT ''",
+    "service": "VARCHAR(32) NOT NULL DEFAULT 'llm'",
+    "units": "FLOAT NOT NULL DEFAULT 0",
+    "billing_mode": "VARCHAR(16) NOT NULL DEFAULT 'payg'",
+    "note": "TEXT NOT NULL DEFAULT ''",
+}
+
 _TABLE_COLUMNS = {
     "chunks": CHUNK_COLUMNS,
     "knowledge_units": KNOWLEDGE_UNIT_COLUMNS,
     "skills": SKILL_COLUMNS,
     "questions": QUESTION_COLUMNS,
+    "llm_usage": USAGE_COLUMNS,
 }
 
 

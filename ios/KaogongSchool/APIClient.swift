@@ -286,8 +286,15 @@ actor APIClient {
         )
     }
 
-    func usage() async throws -> UsageSummary {
-        try await get("/api/analytics/usage", query: ["user_id": userId, "days": "14"])
+    func usage(days: Int = 14) async throws -> UsageSummary {
+        try await get(
+            "/api/analytics/usage",
+            query: ["user_id": userId, "days": String(days)]
+        )
+    }
+
+    func billing() async throws -> BillingOverview {
+        try await get("/api/analytics/billing", query: ["user_id": userId])
     }
 
     func materials() async throws -> [MaterialItem] {

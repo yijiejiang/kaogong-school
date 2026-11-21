@@ -21,6 +21,7 @@ from app.db.models import (
 from app.exams.ai_generator import AiGenerationError, generate_ai_questions
 from app.exams.grading import grade_attempt
 from app.schemas.settings import LlmSettings
+from app.services.llm import role_model_config
 from app.services.skill_matching import load_skill_index, match_skills
 from app.services.usage import record_usage
 
@@ -103,6 +104,7 @@ async def generate_exam(
                         prompt_tokens=result.prompt_tokens,
                         completion_tokens=result.completion_tokens,
                         llm=llm,
+                        api_base=role_model_config(llm, "examiner").api_base,
                     )
                 await db.commit()
             except AiGenerationError as exc:

@@ -1,6 +1,7 @@
 """Tools for the collector, organizer and knowledge agents."""
 
 import json
+import logging
 import os
 
 import httpx
@@ -34,6 +35,9 @@ from app.services.deepseek_tools import (
 from app.services.ingestion import create_url_material
 from app.services.ingestion import reindex_material as reindex_service
 from app.services.settings_service import load_llm_settings
+from app.services.usage import record_service_usage
+
+logger = logging.getLogger(__name__)
 
 
 def _material_brief(material: Material) -> dict:
@@ -444,6 +448,36 @@ async def _deepseek_config():
     return resolve_deepseek(llm)
 
 
+def _current_user(tool_context: ToolContext | None) -> str:
+    if tool_context is None:
+        return "local-user"
+    state = getattr(tool_context, "state", None) or {}
+    return str(state.get("user_id") or "local-user")
+
+
+async def _record_tool_usage(
+    service: str,
+    units: float,
+    user_id: str,
+    model: str = "",
+) -> None:
+    try:
+        async with SessionLocal() as db:
+            llm = await load_llm_settings(db)
+            await record_service_usage(
+                db,
+                user_id=user_id,
+                service=service,
+                provider="deepseek",
+                units=units,
+                llm=llm,
+                model=model,
+            )
+            await db.commit()
+    except Exception:
+        logger.warning("failed to record %s usage", service, exc_info=True)
+
+
 async def read_web_page(url: str, tool_context: ToolContext) -> dict:
     """Read one public web page and return its Markdown text.
 
@@ -462,6 +496,7 @@ async def read_web_page(url: str, tool_context: ToolContext) -> dict:
         page = await fetch_page(config, url)
     except DeepSeekError as exc:
         return {"status": "error", "message": str(exc)}
+    await _record_tool_usage("fetch", 1, _current_user(tool_context))
     content = page["content"]
     return {
         "status": "success",
@@ -489,6 +524,9 @@ async def web_search(query: str, tool_context: ToolContext) -> dict:
                 config, query, count=5, need_content=True
             )
             if results:
+                await _record_tool_usage(
+                    "search", 1, _current_user(tool_context)
+                )
                 return {
                     "status": "success",
                     "provider": "deepseek",

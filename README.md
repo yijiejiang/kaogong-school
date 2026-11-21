@@ -121,6 +121,7 @@
 | 技能地图 | 科目/模块筛选、掌握状态、考法/步骤/变式、来源资料 |
 | 考试 | 组卷、限时作答、答题卡、自动保存、报告、错题 |
 | 学情 | 雷达、趋势、热力图、薄弱点、计划、周报、用量成本 |
+| 费用 | 按量费用、包月渠道、按渠道/服务/每日拆分、最近调用、DeepSeek 官方价目 |
 | 设置 | 连接状态/历史、扫码连接、角色模型、Embedding、ASR、DeepSeek |
 
 ---
@@ -300,6 +301,7 @@ make infra    # PostgreSQL + Redis
 | 知识 | `/api/knowledge/tree`、`/units`、`/skills`、`/skill-map` |
 | 考试 | `/api/exams/*`、`/api/attempts/*` |
 | 学情 | `/api/analytics/*`、`/api/plan/*` |
+| 费用 | `GET /api/analytics/usage`、`GET /api/analytics/billing` |
 | 通知 | `/api/notifications/*` |
 | 语音 | `/api/asr/status`、`/api/asr/transcribe` |
 | 连接 | `/api/connect/info`、`/api/connect/qr.png` |

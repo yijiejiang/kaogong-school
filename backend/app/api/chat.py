@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.db.session import SessionLocal
 from app.schemas.settings import ROLE_KEYS, LlmSettings
 from app.services.adk_runtime import RootFirstRunner, get_session_service
-from app.services.llm import resolve_role_model
+from app.services.llm import resolve_role_model, role_model_config
 from app.services.settings_service import llm_configured, load_llm_settings
 from app.services.usage import record_usage
 
@@ -152,6 +152,7 @@ async def _save_usage(
                 model = resolve_role_model(llm, author) or llm.default_model
                 if get_settings().mock_llm:
                     model = model or "mock-demo"
+                endpoint = role_model_config(llm, author)
                 await record_usage(
                     db,
                     user_id=user_id,
@@ -161,6 +162,7 @@ async def _save_usage(
                     prompt_tokens=item["prompt_tokens"],
                     completion_tokens=item["completion_tokens"],
                     llm=llm,
+                    api_base=endpoint.api_base,
                 )
             await db.commit()
     except Exception:

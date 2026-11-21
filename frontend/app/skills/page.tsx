@@ -22,36 +22,41 @@ import { cn } from "@/lib/utils";
 
 const MASTERY_META: Record<
   string,
-  { label: string; tile: string; bar: string; text: string }
+  { label: string; tile: string; bar: string; dot: string; text: string }
 > = {
   strong: {
     label: "熟练",
     tile: "border-[#bfd8cc] bg-[#eef7f2]",
     bar: "bg-[#2f5d50]",
+    dot: "bg-[#2f5d50]",
     text: "text-[#2f5d50]",
   },
   practicing: {
     label: "会用",
     tile: "border-[#c9d9e8] bg-[#eef4fa]",
     bar: "bg-[#3f5f7a]",
+    dot: "bg-[#3f5f7a]",
     text: "text-[#3f5f7a]",
   },
   learning: {
     label: "了解",
     tile: "border-[#ecd9ae] bg-[#fff8e8]",
     bar: "bg-[#b08244]",
+    dot: "bg-[#b08244]",
     text: "text-[#8a6a24]",
   },
   unpracticed: {
     label: "不清楚",
     tile: "border-[#ddd6c9] bg-[#f7f4ee]",
     bar: "bg-[#b8ae9c]",
+    dot: "bg-[#b8ae9c]",
     text: "text-[#8a8475]",
   },
   due: {
     label: "待复习",
     tile: "border-[#ecc9c2] bg-[#fdf0ee]",
     bar: "bg-[#c25b45]",
+    dot: "bg-[#c25b45]",
     text: "text-[#a33a2a]",
   },
 };
@@ -60,7 +65,8 @@ export default function SkillMapPage() {
   const [data, setData] = useState<SkillMap | null>(null);
   const [loading, setLoading] = useState(true);
   const [subject, setSubject] = useState("");
-  const [module, setModule] = useState("");
+  const [focus, setFocus] = useState<"all" | "weak" | "due">("all");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<SkillMapItem | null>(null);
   const [detail, setDetail] = useState<SkillDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -84,25 +90,39 @@ export default function SkillMapPage() {
     () => [...new Set((data?.subjects ?? []).map((item) => item.subject))],
     [data],
   );
-  const modules = useMemo(
-    () => [
-      ...new Set(
-        (data?.subjects ?? [])
-          .filter((item) => !subject || item.subject === subject)
-          .map((item) => item.module),
-      ),
-    ],
-    [data, subject],
-  );
+
   const groups = useMemo(
     () =>
-      (data?.subjects ?? []).filter(
-        (item) =>
-          (!subject || item.subject === subject) &&
-          (!module || item.module === module),
-      ),
-    [data, module, subject],
+      (data?.subjects ?? [])
+        .filter((item) => !subject || item.subject === subject)
+        .map((item) => ({
+          ...item,
+          visibleSkills: item.skills.filter((skill) => {
+            if (focus === "weak") {
+              return (
+                skill.mastery_status === "learning" ||
+                skill.mastery_status === "unpracticed"
+              );
+            }
+            if (focus === "due") return skill.mastery_status === "due";
+            return true;
+          }),
+        }))
+        .filter((item) => item.visibleSkills.length > 0),
+    [data, focus, subject],
   );
+
+  const totals = useMemo(() => {
+    const summary = data?.summary ?? {};
+    return {
+      strong: summary.strong ?? 0,
+      practicing: summary.practicing ?? 0,
+      learning: summary.learning ?? 0,
+      unpracticed: summary.unpracticed ?? 0,
+      due: summary.due ?? 0,
+      total: summary.total ?? 0,
+    };
+  }, [data]);
 
   const openSkill = async (skill: SkillMapItem) => {
     setSelected(skill);
@@ -134,32 +154,17 @@ export default function SkillMapPage() {
               技能地图
             </h1>
             <p className="mt-1.5 max-w-2xl text-xs leading-5 text-[#6b6459]">
-              按板块查看每项技能的掌握状态。颜色越深表示越熟练；点开可以看到它怎么考、怎么识别、步骤和变式。
+              先看哪个模块最弱，再逐项点开技能。颜色越深越熟练，灰块表示还没练过。
             </p>
           </div>
           <div className="flex gap-2">
             <select
               value={subject}
-              onChange={(event) => {
-                setSubject(event.target.value);
-                setModule("");
-              }}
+              onChange={(event) => setSubject(event.target.value)}
               className="h-9 rounded-lg border border-[#d8d0c4] bg-white px-2.5 text-xs outline-none focus:border-ink"
             >
               <option value="">全部科目</option>
               {subjects.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-            <select
-              value={module}
-              onChange={(event) => setModule(event.target.value)}
-              className="h-9 rounded-lg border border-[#d8d0c4] bg-white px-2.5 text-xs outline-none focus:border-ink"
-            >
-              <option value="">全部模块</option>
-              {modules.map((item) => (
                 <option key={item} value={item}>
                   {item}
                 </option>
@@ -181,71 +186,156 @@ export default function SkillMapPage() {
           </div>
         ) : (
           <>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {[
-                ["熟练", data?.summary.strong ?? 0, "strong"],
-                ["会用", data?.summary.practicing ?? 0, "practicing"],
-                ["了解", data?.summary.learning ?? 0, "learning"],
-                ["不清楚", data?.summary.unpracticed ?? 0, "unpracticed"],
-                ["待复习", data?.summary.due ?? 0, "due"],
-              ].map(([label, value, tone]) => (
-                <div
-                  key={String(label)}
-                  className="rounded-xl border border-[#e5ded1] bg-white/80 px-4 py-3"
-                >
-                  <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#8a8475]">
-                    {label}
-                  </div>
-                  <div
+            <section className="mt-5 rounded-2xl border border-[#e5ded1] bg-white/75 p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-medium text-ink">
+                  {data?.headline || "技能地图已生成"}
+                </p>
+                <span className="text-[11px] text-[#8a8475]">
+                  共 {totals.total} 项技能
+                </span>
+              </div>
+              <StackedBar totals={totals} />
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+                {(
+                  [
+                    ["strong", "熟练"],
+                    ["practicing", "会用"],
+                    ["learning", "了解"],
+                    ["unpracticed", "不清楚"],
+                    ["due", "待复习"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-1.5 text-[10px] text-[#6b6459]"
+                  >
+                    <span
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-sm",
+                        MASTERY_META[key].dot,
+                      )}
+                    />
+                    {label} {totals[key]}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-1.5">
+                {(
+                  [
+                    ["all", "全部"],
+                    ["weak", "只看薄弱"],
+                    ["due", "只看待复习"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFocus(value)}
                     className={cn(
-                      "mt-1 font-serif text-xl",
-                      MASTERY_META[String(tone)]?.text,
+                      "rounded-full border px-2.5 py-1 text-[10px] font-medium transition",
+                      focus === value
+                        ? "border-ink bg-ink text-white"
+                        : "border-[#d8d0c4] bg-white text-[#6b6459]",
                     )}
                   >
-                    {value}
-                  </div>
-                </div>
-              ))}
-            </div>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </section>
 
-            <div className="mt-6 space-y-6">
+            <div className="mt-5 space-y-3">
               {groups.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#d8d0c4] bg-white/50 px-6 py-12 text-center text-xs text-[#8a8475]">
-                  还没有技能。先在资料库上传资料，入库后会自动挖掘技能。
+                  当前筛选下没有技能。换个筛选条件，或先在资料库上传资料。
                 </div>
               ) : (
-                groups.map((group) => (
-                  <section
-                    key={`${group.subject}-${group.module}`}
-                    className="rounded-2xl border border-[#e5ded1] bg-white/60 p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Target className="h-4 w-4 text-[#b08244]" />
-                        <h2 className="text-sm font-semibold">
-                          {group.subject} · {group.module}
-                        </h2>
-                        <span className="text-[10px] text-[#8a8475]">
-                          {group.skills.length} 项技能
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-[#8a8475]">
-                        {group.average_score != null
-                          ? `平均掌握 ${group.average_score}`
-                          : "暂无练习数据"}
-                      </div>
-                    </div>
-                    <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                      {group.skills.map((skill) => (
-                        <SkillTile
-                          key={skill.id}
-                          skill={skill}
-                          onClick={() => void openSkill(skill)}
+                groups.map((group) => {
+                  const key = `${group.subject}-${group.module}`;
+                  const isCollapsed = collapsed[key] ?? false;
+                  return (
+                    <section
+                      key={key}
+                      className="overflow-hidden rounded-2xl border border-[#e5ded1] bg-white/70"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCollapsed((prev) => ({
+                            ...prev,
+                            [key]: !isCollapsed,
+                          }))
+                        }
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-white"
+                      >
+                        <Target className="h-4 w-4 shrink-0 text-[#b08244]" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold">
+                              {group.subject} · {group.module}
+                            </span>
+                            <span className="text-[10px] text-[#8a8475]">
+                              {group.total} 项
+                            </span>
+                            {group.needs_work > 0 && (
+                              <span className="rounded-full bg-[#fff4dd] px-2 py-0.5 text-[10px] text-[#8a6a24]">
+                                待补 {group.needs_work}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#efe9dd]">
+                              <div
+                                className={cn(
+                                  "h-full rounded-full",
+                                  group.health >= 70
+                                    ? "bg-[#2f5d50]"
+                                    : group.health >= 45
+                                      ? "bg-[#3f5f7a]"
+                                      : group.health >= 25
+                                        ? "bg-[#b08244]"
+                                        : "bg-[#c25b45]",
+                                )}
+                                style={{ width: `${Math.max(2, group.health)}%` }}
+                              />
+                            </div>
+                            <span className="w-10 text-right text-[10px] text-[#8a8475]">
+                              {Math.round(group.health)}
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-[#a59d90] transition",
+                            !isCollapsed && "rotate-90",
+                          )}
                         />
-                      ))}
-                    </div>
-                  </section>
-                ))
+                      </button>
+
+                      {!isCollapsed && (
+                        <div className="border-t border-[#f0ebe1] px-4 py-3">
+                          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-8">
+                            {group.visibleSkills.map((skill) => (
+                              <SkillChip
+                                key={skill.id}
+                                skill={skill}
+                                onClick={() => void openSkill(skill)}
+                              />
+                            ))}
+                          </div>
+                          {group.visibleSkills.length < group.total && (
+                            <p className="mt-2 text-[10px] text-[#a59d90]">
+                              已隐藏{" "}
+                              {group.total - group.visibleSkills.length}{" "}
+                              项已练熟的技能
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })
               )}
             </div>
           </>
@@ -267,7 +357,43 @@ export default function SkillMapPage() {
   );
 }
 
-function SkillTile({
+function StackedBar({
+  totals,
+}: {
+  totals: {
+    strong: number;
+    practicing: number;
+    learning: number;
+    unpracticed: number;
+    due: number;
+    total: number;
+  };
+}) {
+  const total = Math.max(totals.total, 1);
+  const parts = (
+    [
+      ["strong", totals.strong],
+      ["practicing", totals.practicing],
+      ["learning", totals.learning],
+      ["unpracticed", totals.unpracticed],
+      ["due", totals.due],
+    ] as const
+  ).filter(([, value]) => value > 0);
+  return (
+    <div className="mt-2.5 flex h-2.5 overflow-hidden rounded-full bg-[#efe9dd]">
+      {parts.map(([key, value]) => (
+        <div
+          key={key}
+          className={cn("h-full", MASTERY_META[key].bar)}
+          style={{ width: `${(value / total) * 100}%` }}
+          title={`${MASTERY_META[key].label} ${value}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SkillChip({
   skill,
   onClick,
 }: {
@@ -275,41 +401,26 @@ function SkillTile({
   onClick: () => void;
 }) {
   const meta = MASTERY_META[skill.mastery_status] ?? MASTERY_META.unpracticed;
-  const score = skill.score ?? 0;
+  const score = skill.score;
   return (
     <button
       type="button"
       onClick={onClick}
+      title={`${skill.name} · ${meta.label}${
+        score != null ? ` · ${Math.round(score)} 分` : ""
+      }`}
       className={cn(
-        "group rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm",
+        "group flex h-14 flex-col justify-between rounded-lg border px-2 py-1.5 text-left transition hover:-translate-y-0.5 hover:shadow-sm",
         meta.tile,
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-xs font-semibold">{skill.name}</div>
-          <div className="mt-0.5 truncate text-[10px] text-[#8a8475]">
-            {skill.knowledge_point_name || "未关联知识点"}
-          </div>
-        </div>
-        <span className={cn("shrink-0 text-[10px] font-medium", meta.text)}>
-          {meta.label}
-        </span>
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/70">
-        <div
-          className={cn("h-full rounded-full", meta.bar)}
-          style={{ width: `${Math.max(4, Math.min(100, score))}%` }}
-        />
-      </div>
-      <div className="mt-2 flex items-center justify-between text-[10px] text-[#8a8475]">
-        <span>
-          {score ? `${Math.round(score)} 分` : "未练习"} · 来源{" "}
-          {skill.source_unit_count}
-          {skill.mastery_source === "knowledge_point" ? " · 知识点估算" : ""}
-        </span>
-        <ChevronRight className="h-3 w-3 transition group-hover:translate-x-0.5" />
-      </div>
+      <span className="line-clamp-2 text-[10px] font-medium leading-4">
+        {skill.name}
+      </span>
+      <span className={cn("flex items-center justify-between text-[9px]", meta.text)}>
+        <span>{meta.label}</span>
+        {score != null && <span>{Math.round(score)}</span>}
+      </span>
     </button>
   );
 }

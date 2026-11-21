@@ -5,28 +5,42 @@ struct SkillMapView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var selectedSubject = ""
-    @State private var selectedModule = ""
+    @State private var focus = "all"
+    @State private var collapsed: Set<String> = []
     @State private var selectedSkill: SkillMapSkill?
 
     private var groups: [SkillMapModule] {
-        (data?.subjects ?? []).filter {
-            (selectedSubject.isEmpty || $0.subject == selectedSubject) &&
-                (selectedModule.isEmpty || $0.module == selectedModule)
-        }
+        (data?.subjects ?? [])
+            .filter { selectedSubject.isEmpty || $0.subject == selectedSubject }
+            .compactMap { group in
+                let visible = group.skills.filter { skill in
+                    switch focus {
+                    case "weak":
+                        return skill.masteryStatus == "learning"
+                            || skill.masteryStatus == "unpracticed"
+                    case "due":
+                        return skill.masteryStatus == "due"
+                    default:
+                        return true
+                    }
+                }
+                guard !visible.isEmpty else { return nil }
+                return SkillMapModule(
+                    subject: group.subject,
+                    module: group.module,
+                    counts: group.counts,
+                    health: group.health,
+                    total: group.total,
+                    needsWork: group.needsWork,
+                    weakRatio: group.weakRatio,
+                    averageScore: group.averageScore,
+                    skills: visible
+                )
+            }
     }
 
     private var subjects: [String] {
         Array(Set((data?.subjects ?? []).map(\.subject))).sorted()
-    }
-
-    private var modules: [String] {
-        Array(
-            Set(
-                (data?.subjects ?? [])
-                    .filter { selectedSubject.isEmpty || $0.subject == selectedSubject }
-                    .map(\.module)
-            )
-        ).sorted()
     }
 
     var body: some View {
@@ -42,17 +56,13 @@ struct SkillMapView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .onChange(of: selectedSubject) {
-                            selectedModule = ""
-                        }
 
-                        Picker("模块", selection: $selectedModule) {
-                            Text("全部模块").tag("")
-                            ForEach(modules, id: \.self) { module in
-                                Text(module).tag(module)
-                            }
+                        Picker("筛选", selection: $focus) {
+                            Text("全部").tag("all")
+                            Text("只看薄弱").tag("weak")
+                            Text("只看待复习").tag("due")
                         }
-                        .pickerStyle(.menu)
+                        .pickerStyle(.segmented)
 
                         ForEach(groups) { group in
                             moduleCard(group)
@@ -98,71 +108,131 @@ struct SkillMapView: View {
     }
 
     private func summary(_ data: SkillMapResponse) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-            ForEach(stats(data)) { item in
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.label).font(.caption2).foregroundStyle(Theme.muted)
-                    Text("\(item.count)").font(.title3.bold()).foregroundStyle(item.color)
+        VStack(alignment: .leading, spacing: 8) {
+            if let headline = data.headline, !headline.isEmpty {
+                Text(headline)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.ink)
+            }
+            HStack(spacing: 4) {
+                ForEach(stats(data)) { item in
+                    if item.count > 0 {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(item.color)
+                            .frame(height: 8)
+                            .frame(maxWidth: .infinity)
+                            .opacity(0.85)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Theme.paper)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .background(Theme.line.opacity(0.4))
+            .clipShape(Capsule())
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(stats(data)) { item in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.label).font(.caption2).foregroundStyle(Theme.muted)
+                        Text("\(item.count)").font(.title3.bold()).foregroundStyle(item.color)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Theme.paper)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
             }
         }
     }
 
     private func moduleCard(_ group: SkillMapModule) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("\(group.subject) · \(group.module)")
-                    .font(.headline)
-                Spacer()
-                Text("\(group.skills.count) 项")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.muted)
-            }
-            if let average = group.averageScore {
-                Text("平均掌握 \(Int(average))")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.muted)
-            }
-            ForEach(group.skills) { skill in
-                Button {
-                    selectedSkill = skill
-                } label: {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(masteryColor(skill.masteryStatus))
-                            .frame(width: 8, height: 8)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(skill.name)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(Theme.ink)
-                            HStack(spacing: 6) {
-                                Text(skill.masteryLabel)
-                                    .font(.caption2)
-                                    .foregroundStyle(masteryColor(skill.masteryStatus))
-                                if skill.masterySource == "knowledge_point" {
-                                    Text("知识点估算").font(.caption2).foregroundStyle(Theme.muted)
-                                }
-                                if let score = skill.score {
-                                    Text("\(Int(score)) 分").font(.caption2).foregroundStyle(Theme.muted)
-                                }
-                                Text("来源 \(skill.sourceUnitCount)").font(.caption2).foregroundStyle(Theme.muted)
-                            }
+        let key = group.id
+        let isCollapsed = collapsed.contains(key)
+        let total = group.total ?? group.skills.count
+        let health = group.health ?? 0
+        let needsWork = group.needsWork ?? 0
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                if isCollapsed {
+                    collapsed.remove(key)
+                } else {
+                    collapsed.insert(key)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text("\(group.subject) · \(group.module)")
+                            .font(.headline)
+                            .foregroundStyle(Theme.ink)
+                        Text("\(total) 项")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.muted)
+                        if needsWork > 0 {
+                            Text("待补 \(needsWork)")
+                                .font(.caption2)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.15))
+                                .foregroundStyle(.orange)
+                                .clipShape(Capsule())
                         }
                         Spacer()
-                        Image(systemName: "chevron.right")
+                        Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                             .font(.caption2)
                             .foregroundStyle(Theme.muted)
                     }
-                    .padding(.vertical, 4)
+                    HStack(spacing: 6) {
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Theme.line.opacity(0.5))
+                                Capsule()
+                                    .fill(healthColor(health))
+                                    .frame(width: max(4, proxy.size.width * health / 100))
+                            }
+                        }
+                        .frame(height: 6)
+                        Text("\(Int(health))")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.muted)
+                            .frame(width: 26, alignment: .trailing)
+                    }
                 }
-                .buttonStyle(.plain)
-                if skill.id != group.skills.last?.id {
-                    Divider()
+            }
+            .buttonStyle(.plain)
+
+            if !isCollapsed {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                    ForEach(group.skills) { skill in
+                        Button {
+                            selectedSkill = skill
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(skill.name)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Theme.ink)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                HStack(spacing: 3) {
+                                    Text(skill.masteryLabel)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(masteryColor(skill.masteryStatus))
+                                    Spacer(minLength: 0)
+                                    if let score = skill.score {
+                                        Text("\(Int(score))")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(masteryColor(skill.masteryStatus))
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 52, alignment: .topLeading)
+                            .padding(7)
+                            .background(masteryColor(skill.masteryStatus).opacity(0.10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(masteryColor(skill.masteryStatus).opacity(0.32))
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -170,6 +240,13 @@ struct SkillMapView: View {
         .background(Theme.paper)
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func healthColor(_ health: Double) -> Color {
+        if health >= 70 { return .green }
+        if health >= 45 { return .blue }
+        if health >= 25 { return .orange }
+        return .red
     }
 
     private func masteryColor(_ status: String) -> Color {

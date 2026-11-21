@@ -307,6 +307,10 @@ export type SkillMapModule = {
   subject: string;
   module: string;
   counts: Record<string, number>;
+  health: number;
+  total: number;
+  needs_work: number;
+  weak_ratio: number;
   average_score: number | null;
   skills: SkillMapItem[];
 };
@@ -315,6 +319,7 @@ export type SkillMap = {
   user_id: string;
   summary: Record<string, number>;
   subjects: SkillMapModule[];
+  headline: string;
 };
 
 export type SkillDetail = {
@@ -632,11 +637,53 @@ export type UsageRecent = {
   role: string;
   role_label: string;
   model: string;
+  service: string;
+  provider: string;
+  provider_label: string;
+  units: number;
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
   cost: number;
+  billing_mode: string;
+  note: string;
   created_at: string;
+};
+
+export type UsageProvider = {
+  provider: string;
+  provider_label: string;
+  requests: number;
+  total_tokens: number;
+  cost: number;
+  billing_mode: string;
+  billing_label: string;
+};
+
+export type UsageService = {
+  service: string;
+  label: string;
+  units: number;
+  requests: number;
+  cost: number;
+};
+
+export type BillingSource = {
+  provider: string;
+  label: string;
+  base: string;
+  service: string;
+  model: string;
+  billing_mode: string;
+  billing_label: string;
+};
+
+export type BillingOverview = {
+  user_id: string;
+  default_billing: string;
+  modes: Array<{ value: string; label: string }>;
+  sources: BillingSource[];
+  price_catalog: Record<string, Record<string, unknown>>;
 };
 
 export type UsageSummary = {
@@ -647,9 +694,12 @@ export type UsageSummary = {
     completion_tokens: number;
     total_tokens: number;
     cost: number;
+    monthly_services: number;
   };
   by_role: UsageRole[];
   by_model: UsageModel[];
+  by_provider: UsageProvider[];
+  by_service: UsageService[];
   daily: UsageDay[];
   recent: UsageRecent[];
 };

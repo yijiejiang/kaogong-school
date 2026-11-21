@@ -22,6 +22,7 @@ from app.rag.asr import (
     AsrError,
     AsrUnavailable,
     asr_ready,
+    drain_asr_seconds,
     transcribe_file,
     transcribe_video_url,
 )
@@ -35,6 +36,7 @@ from app.rag.parsers import (
     ParsedDocument,
     ParseError,
     UnsafeUrl,
+    drain_ocr_pages,
     fetch_url,
     is_public_url,
     parse_file,
@@ -46,10 +48,13 @@ from app.rag.video_slides import (
     VideoSlidesError,
     analyze_video,
     clear_frames,
+    drain_summary_usage,
     slide_chunks,
 )
 from app.services.deepseek_tools import resolve_config as resolve_deepseek
+from app.services.llm import role_model_config
 from app.services.settings_service import load_llm_settings
+from app.services.usage import record_service_usage, record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +442,43 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                 + (f" 视频幻灯片 {slide_count} 页。" if slide_count else "")
                 + (" " + " ".join(warnings) if warnings else "")
             )
+            ocr_pages = drain_ocr_pages()
+            asr_seconds = drain_asr_seconds()
+            summary_prompt, summary_completion = drain_summary_usage()
+            try:
+                if ocr_pages:
+                    await record_service_usage(
+                        db,
+                        user_id=settings.default_user_id,
+                        service="ocr",
+                        provider="deepseek",
+                        units=ocr_pages,
+                        llm=llm,
+                    )
+                if asr_seconds:
+                    await record_service_usage(
+                        db,
+                        user_id=settings.default_user_id,
+                        service="asr",
+                        provider="deepseek",
+                        units=asr_seconds,
+                        llm=llm,
+                    )
+                if summary_prompt or summary_completion:
+                    await record_usage(
+                        db,
+                        user_id=settings.default_user_id,
+                        session_id="",
+                        role="knowledge",
+                        model=role_model_config(llm, "knowledge").model,
+                        prompt_tokens=summary_prompt,
+                        completion_tokens=summary_completion,
+                        llm=llm,
+                        api_base=role_model_config(llm, "knowledge").api_base,
+                    )
+            except Exception:
+                logger.exception("failed to record ingestion usage")
+
             job.result_json = json.dumps(
                 {
                     "chunk_count": count,
@@ -449,6 +491,8 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                     "extraction_model": extraction.get("model", ""),
                     "warning": parsed.warning,
                     "extraction_warning": extraction.get("warning", ""),
+                    "ocr_pages": ocr_pages,
+                    "asr_seconds": round(asr_seconds, 1),
                 },
                 ensure_ascii=False,
             )

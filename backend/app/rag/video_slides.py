@@ -43,6 +43,17 @@ class VideoSlidesError(RuntimeError):
     pass
 
 
+# (prompt_tokens, completion_tokens) collected per video summary run.
+VIDEO_SUMMARY_USAGE: list[tuple[int, int]] = []
+
+
+def drain_summary_usage() -> tuple[int, int]:
+    prompt = sum(item[0] for item in VIDEO_SUMMARY_USAGE)
+    completion = sum(item[1] for item in VIDEO_SUMMARY_USAGE)
+    VIDEO_SUMMARY_USAGE.clear()
+    return prompt, completion
+
+
 @dataclass
 class TimedLine:
     start: float
@@ -387,7 +398,8 @@ async def _summarize_batch(
     llm: LlmSettings,
     video_title: str,
     slides: list[VideoSlide],
-) -> str:
+) -> tuple[str, int, int]:
+    """Summarize one batch; returns (model, prompt_tokens, completion_tokens)."""
     endpoint = role_model_config(llm, "knowledge")
     if not endpoint.model or get_settings().mock_llm:
         raise VideoSlidesError("summary model not configured")
@@ -441,7 +453,12 @@ async def _summarize_batch(
         updated += 1
     if not updated:
         raise VideoSlidesError("summary JSON had no matching slides")
-    return endpoint.model
+    usage = getattr(response, "usage", None)
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+    completion_tokens = (
+        int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
+    )
+    return endpoint.model, prompt_tokens, completion_tokens
 
 
 async def summarize_slides(
@@ -451,16 +468,24 @@ async def summarize_slides(
 ) -> tuple[str, str]:
     used = ""
     warnings: list[str] = []
+    prompt_tokens = 0
+    completion_tokens = 0
     for start in range(0, len(slides), SUMMARY_BATCH):
         batch = slides[start : start + SUMMARY_BATCH]
         try:
-            used = await _summarize_batch(llm, video_title, batch)
+            used, prompt, completion = await _summarize_batch(
+                llm, video_title, batch
+            )
+            prompt_tokens += prompt
+            completion_tokens += completion
         except Exception as exc:  # noqa: BLE001 - fall back per slide
             logger.warning("video slide summary failed: %s", exc)
             warnings.append(str(exc)[:120])
     for slide in slides:
         if not slide.title or not slide.summary:
             _fallback_summary(slide)
+    if prompt_tokens or completion_tokens:
+        VIDEO_SUMMARY_USAGE.append((prompt_tokens, completion_tokens))
     return used, ("；".join(warnings) if warnings else "")
 
 
