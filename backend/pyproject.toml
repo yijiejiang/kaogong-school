@@ -23,7 +23,7 @@ dependencies = [
     "pytesseract>=0.3.13",
     "Pillow>=10.4.0",
     "yt-dlp>=2024.12.0",
-    "ocrmac>=0.1.6",
+    "ocrmac>=0.1.6; sys_platform == 'darwin'",
     "qrcode>=8.0",
     "faster-whisper>=1.2.1",
     "av>=15,<16",
