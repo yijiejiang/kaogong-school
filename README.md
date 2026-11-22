@@ -1,7 +1,10 @@
 # 考公私塾 · Kaogong School
 
-> 一个本地优先、多智能体协作的个人考公学习系统。  
-> 把课程资料、知识整理、技能地图、出卷、改卷和学情计划收进同一个对话框。
+> 一个本地优先、多智能体协作的个人考公（公务员考试 / 国考 / 省考 / 事业单位）AI 学习系统。  
+> 把课程资料、知识整理、技能地图、RAG 问答、出卷、改卷和学情计划收进同一个对话框。
+
+**中文关键词**：考公 · 公考 · 公务员考试 · 国考 · 省考 · 事业单位 · 行测 · 申论 · 资料分析 · 数量关系 · 判断推理 · 言语理解 · 常识判断 · 科学推理 · AI 家教 · 智能学习助手 · 知识图谱 · 错题本 · 学习计划  
+**English keywords**: Chinese civil service exam, gongkao, kaogong, exam prep, AI tutor, study assistant, multi-agent, RAG, self-hosted, local-first
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
@@ -35,6 +38,7 @@
 - [主要 API](#主要-api)
 - [评测](#评测)
 - [已知边界](#已知边界)
+- [适用场景与关键词](#适用场景与关键词)
 - [参与贡献](#参与贡献)
 - [License](#license)
 
@@ -418,6 +422,28 @@ xcodebuild -project ios/KaogongSchool.xcodeproj \
 - **历史数据**：旧作答不会自动回填技能级掌握度；新练习会正常更新。
 - **扫描 PDF**：完整 OCR 依赖 DeepSeek 官方 Key；否则只能索引可提取文字的页面。
 - **成本**：用量看板按设置页单价估算；单价为 0 时只统计 token。
+
+---
+
+## 适用场景与关键词
+
+**适合谁**
+
+- 正在备考国考 / 省考 / 事业单位，想把自己的讲义、网课、真题整理成可检索知识库的人
+- 想用 AI 出卷、批改、讲错题，并且希望所有数据留在自己电脑上的人
+- 想基于 Google ADK 或 OpenAI 兼容模型做一个垂直领域多智能体应用的开发者
+
+**能做什么**
+
+- 把 PDF、网页、图片、音频、B 站 / YouTube 视频课件变成可检索、可引用的知识库
+- 从资料里抽出知识单元与技能，整理「怎么考、怎么识别、步骤、易错点、变式、出题干扰」
+- 按科目 / 模块生成试卷，限时作答，自动判分，逐题解析并更新技能掌握度
+- 用技能地图看每个板块练到什么程度，自动生成周计划与周报
+- 统计每个模型与服务商的真实调用量和费用
+
+**搜索关键词**
+
+考公、公考、公务员考试、国考、省考、事业单位考试、行测、申论、资料分析、数量关系、判断推理、言语理解与表达、常识判断、科学推理、速算技巧、错题本、学习计划、AI 家教、AI 辅导、智能学习助手、知识库问答、RAG、知识图谱、技能树、多智能体、Agent、Google ADK、LiteLLM、DeepSeek、Ollama、自托管、本地部署、隐私优先、SwiftUI、Next.js、FastAPI
 
 ---
 
