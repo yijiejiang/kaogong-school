@@ -9,7 +9,15 @@ from app.db.models import Base
 settings = get_settings()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-engine = create_async_engine(settings.database_url, echo=False, future=True)
+_connect_args = (
+    {"timeout": 30} if settings.database_url.startswith("sqlite") else {}
+)
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    future=True,
+    connect_args=_connect_args,
+)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 CHUNK_COLUMNS = {

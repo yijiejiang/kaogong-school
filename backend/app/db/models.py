@@ -424,15 +424,21 @@ class LlmUsage(Base):
     session_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     role: Mapped[str] = mapped_column(String(32), default="", index=True)
     model: Mapped[str] = mapped_column(String(128), default="")
-    provider: Mapped[str] = mapped_column(String(64), default="", index=True)
-    service: Mapped[str] = mapped_column(String(32), default="llm", index=True)
-    units: Mapped[float] = mapped_column(Float, default=0.0)
+    provider: Mapped[str] = mapped_column(
+        String(64), default="", server_default="", index=True
+    )
+    service: Mapped[str] = mapped_column(
+        String(32), default="llm", server_default="llm", index=True
+    )
+    units: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost: Mapped[float] = mapped_column(Float, default=0.0)
-    billing_mode: Mapped[str] = mapped_column(String(16), default="payg")
-    note: Mapped[str] = mapped_column(Text, default="")
+    billing_mode: Mapped[str] = mapped_column(
+        String(16), default="payg", server_default="payg"
+    )
+    note: Mapped[str] = mapped_column(Text, default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
     )

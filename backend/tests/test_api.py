@@ -504,17 +504,23 @@ def test_usage_aggregation() -> None:
     user_id = f"pytest-usage-{uuid.uuid4().hex[:6]}"
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")
     with TestClient(app) as client:
-        connection = sqlite3.connect(TEST_DB)
+        connection = sqlite3.connect(TEST_DB, timeout=30)
         connection.execute(
             "INSERT INTO llm_usage (id, user_id, session_id, role, model, "
+            "provider, service, units, billing_mode, note, "
             "prompt_tokens, completion_tokens, total_tokens, cost, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 uuid.uuid4().hex,
                 user_id,
                 "s_test",
                 "counselor",
                 "test-model",
+                "",
+                "llm",
+                0.0,
+                "payg",
+                "",
                 100,
                 50,
                 150,
@@ -1239,9 +1245,12 @@ def test_build_video_slides_groups_similar_frames(tmp_path) -> None:
 
     from app.rag import video_slides
 
-    font = ImageFont.truetype(
-        "/System/Library/Fonts/Supplemental/Songti.ttc", 44
-    )
+    try:
+        font = ImageFont.truetype(
+            "/System/Library/Fonts/Supplemental/Songti.ttc", 44
+        )
+    except OSError:
+        pytest.skip("macOS Chinese font is not available")
     frames: list[Path] = []
     texts = [
         "资料分析速算\n截位直除方法",
