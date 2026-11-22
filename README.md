@@ -31,6 +31,7 @@
 - [系统架构](#系统架构)
 - [iOS 客户端](#ios-客户端)
 - [部署](#部署)
+- [让 AI 帮你部署](#让-ai-帮你部署)
 - [主要 API](#主要-api)
 - [评测](#评测)
 - [已知边界](#已知边界)
@@ -290,6 +291,70 @@ make infra    # PostgreSQL + Redis
 
 见 [deploy/cloudrun.md](deploy/cloudrun.md)。  
 注意：当前上传目录是本地磁盘；公网部署前建议接对象存储，并补充登录鉴权。
+
+---
+
+## 让 AI 帮你部署
+
+把下面整段提示词复制给你电脑上的 AI Agent（Claude Code、Codex、Cursor 等），它会按步骤检查环境、安装依赖、启动服务并验证。
+
+```text
+你是我的部署助手。请在这台电脑上部署开源项目「考公私塾（Kaogong School）」：
+https://github.com/yijiejiang/kaogong-school
+
+项目结构：backend（Python 3.12 + FastAPI + Google ADK）、frontend（Next.js 15）、ios（SwiftUI，仅 macOS）。
+目标：在本机跑通 Web 端，能打开 http://localhost:3000 并正常对话；不需要部署 iOS，除非我明确要求。
+
+请按顺序执行，每一步做完先报告结果，失败就停下来告诉我原因和可选方案，不要静默跳过：
+
+1. 环境检查
+   - 检查 git、uv（https://docs.astral.sh/uv/）、Node.js 20+、pnpm、ffmpeg 是否存在
+   - macOS 额外检查 Xcode Command Line Tools
+   - 如果缺少工具，先告诉我安装命令，得到我确认再装
+
+2. 获取代码
+   - git clone https://github.com/yijiejiang/kaogong-school.git
+   - 进入项目目录，确认 README.md、Makefile、backend/、frontend/ 都存在
+
+3. 后端配置
+   - cp backend/.env.example backend/.env
+   - 生成一个随机 APP_SECRET_KEY 写进去（不要用默认值）
+   - 询问我是否已有 LLM 的 Base URL / API Key / 模型名；
+     如果我有，就写进 backend/.env 的 LLM_API_BASE、LLM_API_KEY、LLM_DEFAULT_MODEL；
+     如果我没有，就把 MOCK_LLM 设为 1 先用演示模式
+   - 明确提醒我：不要提交 backend/.env，不要把它贴到公开地方
+
+4. 安装依赖
+   - 后端：cd backend && uv sync
+   - 前端：cd frontend && pnpm install（没有 pnpm 就用 npm install，并告诉我差异）
+
+5. 启动并验证
+   - 后端：cd backend && uv run uvicorn app.main:app --reload --port 8000
+     （如果使用演示模式，加 MOCK_LLM=1）
+   - 前端：cd frontend && pnpm dev
+   - 验证后端：curl http://127.0.0.1:8000/api/health 应返回 status: ok
+   - 验证前端：打开 http://localhost:3000，确认聊天界面能加载
+   - 在聊天框发一句「你好」，确认能收到回复（演示模式也会回复）
+
+6. 可选增强（先问我，不要自作主张）
+   - Embedding：如果本机有 Ollama，建议用 qwen3-embedding:0.6b，然后在设置页填写并到资料库重新索引
+   - 视频转写：cd backend && uv add faster-whisper，并设置 ASR_LOCAL_MODEL=small
+   - DeepSeek 官方能力（联网搜索 / 扫描 PDF OCR / 短音频 ASR）：在设置页填 DeepSeek 官方 Base URL 和 Key
+   - 局域网给 iPad 用：用 make backend-lan 启动，并在设置页扫码连接
+   - 开机自启：make install-service
+
+7. 收尾
+   - 告诉我：后端地址、前端地址、当前是演示模式还是真实模型、哪些可选能力已开启
+   - 列出你执行过的命令，以及任何被跳过或失败的地方
+
+注意：
+- 遇到报错先看日志，不要直接重装或删数据目录（backend/data/）
+- 不要修改 backend/.env.example 或提交任何密钥
+- 如果端口 8000 / 3000 被占用，先告诉我占用进程，得到确认再换端口
+- 每一步都要真实执行并验证，不要假设成功
+```
+
+部署完成后，你可以继续让同一个 Agent 帮你上传资料、配置模型或排查问题。
 
 ---
 
