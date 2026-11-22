@@ -366,11 +366,11 @@ xcodebuild -project ios/KaogongSchool.xcodeproj \
 - iOS / Web 交互与可访问性
 - 部署、认证、对象存储和多设备同步
 
-提交前请：
+提交前请读 [CONTRIBUTING.md](CONTRIBUTING.md)，并至少运行：
 
-1. 运行 `uv run pytest -q`。
-2. 若修改资料/检索逻辑，运行 `uv run python scripts/evaluate_library.py`。
-3. 不提交 `backend/.env`、API Key、数据库、上传资料或构建产物。
+1. `cd backend && uv run ruff check . && uv run pytest -q`
+2. 若修改资料/检索逻辑，`uv run python scripts/evaluate_library.py`
+3. 不提交 `backend/.env`、API Key、数据库、上传资料或构建产物
 
 ---
 
