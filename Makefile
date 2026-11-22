@@ -1,6 +1,12 @@
-.PHONY: install infra backend backend-demo backend-lan frontend test lint install-service uninstall-service service-logs ios ios-build tailscale-serve tailscale-status tailscale-stop
+.PHONY: start demo install infra backend backend-demo backend-lan frontend test lint install-service uninstall-service service-logs ios ios-build tailscale-serve tailscale-status tailscale-stop
 
 TAILSCALE_BIN ?= tailscale
+
+start:
+	./start.sh
+
+demo:
+	MODE=demo ./start.sh
 
 install:
 	cd backend && uv sync

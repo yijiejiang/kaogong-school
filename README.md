@@ -153,17 +153,38 @@ cp backend/.env.example backend/.env
 # 至少修改 APP_SECRET_KEY
 
 make install
-make backend    # http://localhost:8000
+make backend    # http://localhost:8000（或直接 make start 同时启动前后端）
 make frontend   # http://localhost:3000
 ```
 
 打开 http://localhost:3000，进入「设置」填写模型 Base URL、API Key 和模型名，保存并测试连接。
 
+### 一键启动
+
+首次装好依赖后，用一条命令同时启动前后端：
+
+```bash
+make start
+```
+
+它会检查环境、缺少 `.env` 时自动生成、等待前后端就绪，按 `Ctrl-C` 同时停止。
+
+没有 API Key 时用演示模式：
+
+```bash
+make demo
+```
+
+自定义端口：
+
+```bash
+BACKEND_PORT=8010 FRONTEND_PORT=3010 make start
+```
+
 ### 没有 Key 也能体验
 
 ```bash
-make backend-demo   # MOCK_LLM=1
-make frontend
+make demo   # 等价于 MODE=demo ./start.sh
 ```
 
 演示模式会返回固定的学情、出卷卡片和知识库回答；资料入库默认使用本地 `hash-384` 向量，不需要 Embedding Key。
@@ -175,7 +196,7 @@ make frontend
 MOCK_LLM=0
 ```
 
-然后用 `make backend` 重启。
+然后用 `make start` 重启。
 
 ### 一条视频试试
 
