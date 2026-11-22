@@ -9,6 +9,7 @@
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-iOS%2017-F05138?logo=swift&logoColor=white)
 ![Local First](https://img.shields.io/badge/Local--First-yes-2F5D50)
 ![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI%20Compatible-6B4FBB)
+![License](https://img.shields.io/badge/License-MIT-2F5D50)
 
 它不是一个只会聊天的题库，而是一套围绕「资料 → 知识 → 技能 → 练习 → 反馈」闭环设计的个人备考系统：
 
@@ -375,7 +376,9 @@ xcodebuild -project ios/KaogongSchool.xcodeproj \
 
 ## License
 
-仓库目前尚未附带开源许可证。正式开源前请补充 `LICENSE`（例如 MIT 或 Apache-2.0），再接受外部代码贡献。
+[MIT](LICENSE) © 2026 yijiejiang
+
+你可以自由使用、修改、分发和商用本项目，只需保留版权声明与许可证声明。
 
 ---
 
