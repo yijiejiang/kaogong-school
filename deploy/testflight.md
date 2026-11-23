@@ -9,7 +9,7 @@
 - Bundle ID：`com.kaogong.school`
 - 版本：`1.0.0`
 - Build：`1`
-- Team：`ND6298Q5HK`
+- Team：由 `ios/Config/Signing.local.xcconfig` 提供
 - 签名：Automatic
 - 最低系统：iOS 17
 - 支持设备：iPhone + iPad
@@ -93,9 +93,9 @@
 
 处理顺序：
 
-1. 到 [developer.apple.com](https://developer.apple.com/account/resources/identifiers) 确认 `com.kaogong.school` 已在 Team `ND6298Q5HK` 下注册。
+1. 到 [developer.apple.com](https://developer.apple.com/account/resources/identifiers) 确认 Bundle ID 已在你的 Team 下注册。
 2. 到 App Store Connect → Apps → **+** → New App，Bundle ID 选择 `com.kaogong.school`。
-3. Xcode → Settings → Accounts，确认登录的是同一个 Apple ID，并在 Team 列表里选择 `ND6298Q5HK`。
+3. Xcode → Settings → Accounts，确认登录的是同一个 Apple ID，并在 Team 列表里选择自己的团队。
 4. Xcode → Target → Signing & Capabilities，重新勾选 Automatically manage signing。
 5. Product → Clean Build Folder，然后重新 Product → Archive。
 6. Organizer → Distribute App → App Store Connect → Upload。

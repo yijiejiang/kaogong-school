@@ -1,0 +1,7 @@
+// 复制本文件为 Signing.local.xcconfig 后填写。
+// Team ID 可以在 Xcode → Settings → Accounts 里查到，
+// 或到 developer.apple.com/account 的 Membership 页面查看。
+// 没有付费开发者账号时填免费个人团队的 ID 也可以（Xcode 会自动分配）。
+DEVELOPMENT_TEAM =
+// 如果 Bundle ID 已被占用，改成一个唯一的，例如 com.yourname.kaogong
+PRODUCT_BUNDLE_IDENTIFIER = com.kaogong.school

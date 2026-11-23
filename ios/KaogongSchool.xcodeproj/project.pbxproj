@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		AA0000000000000000000002 /* KaogongSchool.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KaogongSchool.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000020 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -29,8 +30,17 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000001 /* KaogongSchool */,
+				AA0000000000000000000021 /* Config */,
 				AA0000000000000000000005 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000021 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000020 /* Signing.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		AA0000000000000000000005 /* Products */ = {
@@ -172,11 +182,11 @@
 		};
 		AA0000000000000000000014 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000020 /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ND6298Q5HK;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "KaogongSchool-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -184,7 +194,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kaogong.school;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -196,11 +205,11 @@
 		};
 		AA0000000000000000000015 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000020 /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ND6298Q5HK;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "KaogongSchool-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -208,7 +217,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kaogong.school;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

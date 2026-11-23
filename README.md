@@ -219,7 +219,14 @@ iPad 连后端最省事的办法：
 - 需要用无线调试、后台能力、CloudKit 等需要 entitlement 的功能
 - 希望签名一年有效、不用每 7 天重装
 
-工程里的 `DEVELOPMENT_TEAM = ND6298Q5HK` 是我的团队 ID，你 fork 后要在 Xcode 里换成自己的，否则签名会失败。
+工程不含任何人的团队 ID。首次打开 iOS 工程前，先建本地签名配置：
+
+```bash
+cp ios/Config/Signing.local.xcconfig.example ios/Config/Signing.local.xcconfig
+```
+
+然后在 `Signing.local.xcconfig` 里填上自己的 `DEVELOPMENT_TEAM`。这个文件已被 `.gitignore` 忽略，不会提交。
+Team ID 可以在 Xcode → Settings → Accounts，或 developer.apple.com 的 Membership 页面查到。
 
 ---
 

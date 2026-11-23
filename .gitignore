@@ -19,4 +19,6 @@ frontend/.env.local
 ios/build/
 ios/DerivedData/
 xcuserdata/
+# 本地签名配置（含 Team ID），不要提交
+ios/Config/Signing.local.xcconfig
 *.xcuserstate
