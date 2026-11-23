@@ -63,7 +63,13 @@ fi
 # 端口占用检查
 for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
   if port_busy "$port"; then
-    fail "端口 $port 已被占用。换端口：BACKEND_PORT=$((port+1)) FRONTEND_PORT=$((port+2)) ./start.sh"
+    fail "端口 $port 已被占用："
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN | tail -n +2 | awk '{printf "    PID %s  %s\n", $2, $1}'
+    if [ "$port" = "$BACKEND_PORT" ]; then
+      fail "如果是之前留下的后端，先停掉再运行；或换端口：BACKEND_PORT=$((port+1)) FRONTEND_PORT=$((FRONTEND_PORT+1)) ./start.sh"
+    else
+      fail "或换端口：FRONTEND_PORT=$((port+1)) ./start.sh"
+    fi
     exit 1
   fi
 done
@@ -83,10 +89,10 @@ trap cleanup INT TERM
 
 if [ "$MODE" = "demo" ]; then
   info "后端（演示模式，无需 API Key）"
-  (cd backend && MOCK_LLM=1 exec uv run uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT") &
+  (cd backend && MOCK_LLM=1 exec uv run uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload) &
 else
   info "后端（真实模型）"
-  (cd backend && exec uv run uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT") &
+  (cd backend && exec uv run uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload) &
 fi
 PIDS+=($!)
 
