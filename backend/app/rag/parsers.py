@@ -104,7 +104,7 @@ def _parse_image(
     if not text.strip() and deepseek and deepseek.ready:
         try:
             pages = ocr_file_sync(deepseek, path, filename)
-            text = "\n\n".join(page_text for _, page_text in pages)
+            text = "\n\n".join(page.text for page in pages)
             warning = "DeepSeek OCR"
             record_ocr_pages(len(pages))
         except DeepSeekError as exc:
@@ -167,6 +167,80 @@ def _strip_dot_leader(line: str) -> str:
     return value or line
 
 
+SCANNED_PAGE_CHARS = 50      # 平均每页少于这么多有效字符，就当作扫描件
+OCR_BATCH_PAGES = 20          # 每批送给 DeepSeek OCR 的页数
+OCR_MAX_PAGES = 1000          # 官方单次上限
+
+
+def _meaningful_chars(text: str) -> int:
+    """只统计有意义的字符，排除页码、水印这类零散噪声。"""
+    cleaned = re.sub(r"[\s\d\W_]+", "", text, flags=re.UNICODE)
+    return len(cleaned)
+
+
+def _looks_scanned(pages: list[tuple[int, str]]) -> bool:
+    if not pages:
+        return False
+    total = sum(_meaningful_chars(text) for _, text in pages)
+    return total / len(pages) < SCANNED_PAGE_CHARS
+
+
+def _ocr_in_batches(
+    config: DeepSeekConfig,
+    path: Path,
+    filename: str,
+    total_pages: int,
+) -> tuple[list[tuple[int, str]], list[str], int]:
+    """按页分批调用 OCR，单批失败不影响其它批次。
+
+    返回 (页文本, 警告, 截断页数)。页码保持与原始 PDF 对齐。
+    """
+    collected: dict[int, str] = {}
+    warnings: list[str] = []
+    truncated = 0
+    limit = min(total_pages, OCR_MAX_PAGES)
+    if total_pages > OCR_MAX_PAGES:
+        warnings.append(f"PDF 超过 {OCR_MAX_PAGES} 页，只识别前 {OCR_MAX_PAGES} 页。")
+
+    document = pymupdf.open(path)
+    try:
+        for start in range(0, limit, OCR_BATCH_PAGES):
+            end = min(start + OCR_BATCH_PAGES, limit)
+            temp_path: Path | None = None
+            try:
+                batch = pymupdf.open()
+                batch.insert_pdf(document, from_page=start, to_page=end - 1)
+                with tempfile.NamedTemporaryFile(
+                    suffix=".pdf", delete=False
+                ) as handle:
+                    batch.save(handle.name)
+                    temp_path = Path(handle.name)
+                batch.close()
+
+                pages = ocr_file_sync(
+                    config,
+                    temp_path,
+                    filename,
+                    start_page=start,
+                )
+                for page in pages:
+                    collected[page.index] = page.text
+                    if page.truncated:
+                        truncated += 1
+            except DeepSeekError as exc:
+                warnings.append(f"第 {start + 1}-{end} 页 OCR 失败：{exc}")
+            except Exception as exc:  # noqa: BLE001 - 单批失败不影响整体
+                warnings.append(f"第 {start + 1}-{end} 页处理异常：{exc}")
+            finally:
+                if temp_path is not None:
+                    temp_path.unlink(missing_ok=True)
+    finally:
+        document.close()
+
+    ordered = sorted(collected.items())
+    return ordered, warnings, truncated
+
+
 def _parse_pdf(
     path: Path,
     filename: str,
@@ -175,34 +249,42 @@ def _parse_pdf(
 ) -> ParsedDocument:
     document = pymupdf.open(path)
     pages: list[tuple[int, str]] = []
-    empty_pages = 0
     try:
         for index, page in enumerate(document):
             text = normalize_text(page.get_text("text"))
-            if not text:
-                empty_pages += 1
             pages.append((index + 1, text))
         metadata = document.metadata or {}
     finally:
         document.close()
 
     warning = ""
-    if pages and empty_pages / len(pages) > 0.5:
-        warning = "多数页面没有可提取文字，可能是扫描版 PDF。"
+    warnings: list[str] = []
+    if _looks_scanned(pages):
+        warning = "疑似扫描版 PDF（文字层稀薄）。"
         if deepseek and deepseek.ready:
-            try:
-                ocr_pages = ocr_file_sync(deepseek, path, filename)
-                pages = ocr_pages
-                warning = "扫描版 PDF 已使用 DeepSeek OCR。"
+            ocr_pages, ocr_warnings, truncated = _ocr_in_batches(
+                deepseek, path, filename, len(pages)
+            )
+            if ocr_pages:
+                # OCR 结果按页覆盖，未识别到的页保留原有文字层
+                existing = dict(pages)
+                existing.update(dict(ocr_pages))
+                pages = sorted(existing.items())
+                warning = f"扫描版 PDF 已使用 DeepSeek OCR（识别 {len(ocr_pages)} 页）。"
                 record_ocr_pages(len(ocr_pages))
-            except DeepSeekError as exc:
-                warning = f"{warning} DeepSeek OCR 失败：{exc}"
+            if truncated:
+                warnings.append(f"{truncated} 页输出被截断，内容可能不完整。")
+            warnings.extend(ocr_warnings)
+        else:
+            warnings.append("未配置 DeepSeek Key，无法对扫描页做 OCR。")
 
     pages = _strip_page_noise(pages)
     text = "\n\n".join(page_text for _, page_text in pages if page_text)
     title = str(metadata.get("title") or "").strip() or Path(filename).stem
-    if pages and empty_pages / len(pages) > 0.5 and not text.strip():
-        warning = warning or "PDF 没有可提取文字。"
+    if not text.strip():
+        warnings.append("PDF 没有可提取文字。")
+    if warnings:
+        warning = " ".join([item for item in [warning, *warnings] if item])
     return ParsedDocument(
         title=title,
         text=text,

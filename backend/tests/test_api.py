@@ -1170,9 +1170,13 @@ def test_scanned_pdf_uses_deepseek_ocr(monkeypatch, tmp_path) -> None:
     document.save(path)
     document.close()
 
-    def fake_ocr(config, file_path, filename=None, purpose="text_recognition"):
+    from app.services.deepseek_tools import OcrPage
+
+    def fake_ocr(
+        config, file_path, filename=None, purpose="text_recognition", start_page=0
+    ):
         assert config.ready
-        return [(1, "扫描页识别出的增长率公式")]
+        return [OcrPage(index=start_page + 1, text="扫描页识别出的增长率公式")]
 
     monkeypatch.setattr(parsers, "ocr_file_sync", fake_ocr)
     parsed = parsers.parse_file(
@@ -1183,6 +1187,58 @@ def test_scanned_pdf_uses_deepseek_ocr(monkeypatch, tmp_path) -> None:
     )
     assert "扫描页识别出的增长率公式" in parsed.text
     assert "DeepSeek OCR" in parsed.warning
+
+
+def test_scanned_pdf_detection_uses_char_density() -> None:
+    from app.rag.parsers import _looks_scanned
+
+    # 每页只有页码和水印，实际是扫描件
+    sparse = [(1, "第 1 页"), (2, "第 2 页"), (3, "关注公众号")]
+    assert _looks_scanned(sparse)
+
+    dense = [(1, "增长率的计算公式是增长率等于增长量除以基期量" * 3)]
+    assert not _looks_scanned(dense)
+
+
+def test_ocr_batches_are_page_aligned(monkeypatch, tmp_path) -> None:
+    import pymupdf
+
+    from app.rag import parsers
+    from app.services.deepseek_tools import DeepSeekConfig, OcrPage
+
+    path = tmp_path / "multi.pdf"
+    document = pymupdf.open()
+    for _ in range(45):
+        document.new_page()
+    document.save(path)
+    document.close()
+
+    calls: list[int] = []
+
+    def fake_ocr(config, file_path, filename=None, purpose="text_recognition", start_page=0):
+        calls.append(start_page)
+        # 每批返回 20 页，其中第 2 页标记为截断
+        pages = [
+            OcrPage(index=start_page + offset + 1, text=f"p{start_page + offset + 1}")
+            for offset in range(20)
+            if start_page + offset + 1 <= 45
+        ]
+        if pages:
+            pages[1].truncated = True
+        return pages
+
+    monkeypatch.setattr(parsers, "ocr_file_sync", fake_ocr)
+    pages, warnings, truncated = parsers._ocr_in_batches(
+        DeepSeekConfig("https://api.deepseek.com", "test-key"),
+        path,
+        "multi.pdf",
+        45,
+    )
+    assert calls == [0, 20, 40]
+    assert [index for index, _ in pages][:3] == [1, 2, 3]
+    assert pages[-1][0] == 45
+    assert truncated == 3
+    assert warnings == []
 
 
 async def test_deepseek_asr_preferred(monkeypatch, tmp_path) -> None:

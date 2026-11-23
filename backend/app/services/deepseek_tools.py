@@ -138,17 +138,35 @@ async def fetch_page(config: DeepSeekConfig, url: str) -> dict:
     }
 
 
-def _parse_ocr(data: dict) -> list[tuple[int, str]]:
-    pages = data.get("pages") or []
-    parsed: list[tuple[int, str]] = []
-    for index, item in enumerate(pages):
+@dataclass
+class OcrPage:
+    """一页 OCR 结果。truncated 表示输出被长度上限截断。"""
+
+    index: int          # 1-based 页码
+    text: str
+    truncated: bool = False
+
+
+def _parse_ocr(data: dict, start_page: int = 0) -> list[OcrPage]:
+    raw_pages = data.get("pages") or []
+    parsed: list[OcrPage] = []
+    for position, item in enumerate(raw_pages):
         if not isinstance(item, dict):
             continue
         text = str(item.get("text") or "").strip()
         if not text:
             continue
-        number = int(item.get("index", index)) + 1
-        parsed.append((number, text))
+        try:
+            local_index = int(item.get("index", position))
+        except (TypeError, ValueError):
+            local_index = position
+        parsed.append(
+            OcrPage(
+                index=start_page + local_index + 1,
+                text=text,
+                truncated=str(item.get("finish_reason") or "") == "length",
+            )
+        )
     return parsed
 
 
@@ -162,7 +180,8 @@ async def ocr_file(
     filename: str | None = None,
     *,
     purpose: str = "text_recognition",
-) -> list[tuple[int, str]]:
+    start_page: int = 0,
+) -> list[OcrPage]:
     if not config.ready:
         raise DeepSeekError("未配置 DeepSeek API Key。")
     name = filename or path.name
@@ -182,7 +201,7 @@ async def ocr_file(
     if response.status_code >= 400:
         raise _error(response)
     try:
-        pages = _parse_ocr(response.json())
+        pages = _parse_ocr(response.json(), start_page)
     except ValueError as exc:
         raise DeepSeekError("DeepSeek OCR 返回了无法解析的内容。") from exc
     if not pages:
@@ -196,7 +215,8 @@ def ocr_file_sync(
     filename: str | None = None,
     *,
     purpose: str = "text_recognition",
-) -> list[tuple[int, str]]:
+    start_page: int = 0,
+) -> list[OcrPage]:
     """Blocking variant used from ingestion's parser thread."""
     if not config.ready:
         raise DeepSeekError("未配置 DeepSeek API Key。")
@@ -216,7 +236,7 @@ def ocr_file_sync(
     if response.status_code >= 400:
         raise _error(response)
     try:
-        pages = _parse_ocr(response.json())
+        pages = _parse_ocr(response.json(), start_page)
     except ValueError as exc:
         raise DeepSeekError("DeepSeek OCR 返回了无法解析的内容。") from exc
     if not pages:
