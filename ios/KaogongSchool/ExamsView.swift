@@ -320,6 +320,13 @@ private struct ExamPlayerView: View {
     @State private var showScratchPanel = false
     @State private var scratchIndex = 0
     @State private var scratchHeight: CGFloat = 360
+    @State private var scratchWidth: CGFloat = 380
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// 横屏时左右分屏，竖屏时上下分屏。
+    private var isLandscape: Bool {
+        horizontalSizeClass == .regular
+    }
     @StateObject private var scratchStore = ScratchStore.shared
 
     private var answeredCount: Int {
@@ -333,47 +340,34 @@ private struct ExamPlayerView: View {
                     VStack(spacing: 0) {
                         header(attempt)
                         palette(attempt, proxy: proxy)
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 14) {
-                                if let report {
-                                    submittedCard(report)
-                                }
-                                ForEach(
-                                    Array(attempt.exam.questions.enumerated()),
-                                    id: \.element.id
-                                ) { index, question in
-                                    questionView(index: index + 1, question: question)
-                                        .id(question.id)
-                                }
-                                if report == nil {
-                                    Button {
-                                        showSubmitConfirm = true
-                                    } label: {
-                                        Text("交卷并判分")
-                                            .font(.headline)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 12)
-                                            .background(Theme.solid)
-                                            .foregroundStyle(Theme.onSolid)
-                                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    }
-                                    .disabled(busy)
-                                    .padding(.top, 4)
-                                }
+                        if isLandscape && showScratchPanel {
+                            HStack(spacing: 0) {
+                                questionScroll(attempt, proxy: proxy)
+                                ScratchSplitPanel(
+                                    examId: examId,
+                                    questions: scratchQuestions(attempt),
+                                    currentIndex: $scratchIndex,
+                                    height: $scratchHeight,
+                                    panelWidth: $scratchWidth,
+                                    axis: .horizontal,
+                                    onClose: { showScratchPanel = false }
+                                )
+                                .transition(.move(edge: .trailing))
                             }
-                            .padding()
-                        }
-                        if showScratchPanel {
-                            ScratchSplitPanel(
-                                examId: examId,
-                                questions: attempt.exam.questions.enumerated().map {
-                                    (id: $0.element.id, index: $0.offset + 1)
-                                },
-                                currentIndex: $scratchIndex,
-                                height: $scratchHeight,
-                                onClose: { showScratchPanel = false }
-                            )
-                            .transition(.move(edge: .bottom))
+                        } else {
+                            questionScroll(attempt, proxy: proxy)
+                            if showScratchPanel {
+                                ScratchSplitPanel(
+                                    examId: examId,
+                                    questions: scratchQuestions(attempt),
+                                    currentIndex: $scratchIndex,
+                                    height: $scratchHeight,
+                                    panelWidth: $scratchWidth,
+                                    axis: .vertical,
+                                    onClose: { showScratchPanel = false }
+                                )
+                                .transition(.move(edge: .bottom))
+                            }
                         }
                     }
                     .animation(.easeInOut(duration: 0.22), value: showScratchPanel)
@@ -408,6 +402,48 @@ private struct ExamPlayerView: View {
             Button("继续作答", role: .cancel) {}
         } message: {
             Text("已作答 \(answeredCount) / \(attempt?.exam.questions.count ?? 0) 题")
+        }
+    }
+
+    private func scratchQuestions(_ attempt: AttemptStart) -> [(id: String, index: Int)] {
+        attempt.exam.questions.enumerated().map {
+            (id: $0.element.id, index: $0.offset + 1)
+        }
+    }
+
+    private func questionScroll(
+        _ attempt: AttemptStart,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
+                if let report {
+                    submittedCard(report)
+                }
+                ForEach(
+                    Array(attempt.exam.questions.enumerated()),
+                    id: \.element.id
+                ) { index, question in
+                    questionView(index: index + 1, question: question)
+                        .id(question.id)
+                }
+                if report == nil {
+                    Button {
+                        showSubmitConfirm = true
+                    } label: {
+                        Text("交卷并判分")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Theme.solid)
+                            .foregroundStyle(Theme.onSolid)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .disabled(busy)
+                    .padding(.top, 4)
+                }
+            }
+            .padding()
         }
     }
 

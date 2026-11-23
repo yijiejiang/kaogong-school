@@ -240,12 +240,20 @@ struct ScratchToolbar: View {
     }
 }
 
-/// 做题页底部的草稿分屏，可拖动调整高度。
+/// 草稿分屏的排布方向。
+enum ScratchAxis {
+    case vertical    // 竖屏：上下分，拖动高度
+    case horizontal  // 横屏：左右分，拖动宽度
+}
+
+/// 做题页的草稿分屏，可拖动调整尺寸。
 struct ScratchSplitPanel: View {
     let examId: String
     let questions: [(id: String, index: Int)]
     @Binding var currentIndex: Int
     @Binding var height: CGFloat
+    @Binding var panelWidth: CGFloat
+    var axis: ScratchAxis = .vertical
     var onClose: () -> Void
 
     @StateObject private var store = ScratchStore.shared
@@ -257,6 +265,7 @@ struct ScratchSplitPanel: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var isDragging = false
     @State private var dragStartHeight: CGFloat = 0
+    @State private var dragStartWidth: CGFloat = 0
     @State private var loadedQuestionId = ""
 
     private var current: (id: String, index: Int)? {
@@ -265,40 +274,67 @@ struct ScratchSplitPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            handle
-            picker
-            Divider()
-            ZStack {
-                Color(uiColor: .secondarySystemBackground)
-                ScratchCanvas(drawing: $drawing, tool: tool, onChanged: handleDrawing)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .padding(6)
+        Group {
+            switch axis {
+            case .vertical:
+                VStack(spacing: 0) {
+                    handle
+                    picker
+                    Divider()
+                    canvas
+                    Divider()
+                    toolbarBar
+                }
+                .frame(height: height)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Theme.line).frame(height: 1)
+                }
+            case .horizontal:
+                VStack(spacing: 0) {
+                    handle
+                    picker
+                    Divider()
+                    canvas
+                    Divider()
+                    toolbarBar
+                }
+                .frame(width: panelWidth)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(Theme.line).frame(width: 1)
+                }
             }
-            Divider()
-            ScratchToolbar(
-                color: $color,
-                width: $width,
-                eraser: $eraser,
-                onToolChange: applyTool,
-                onClear: clear,
-                canClear: !drawing.strokes.isEmpty
-            )
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Theme.paper)
         }
-        .frame(height: height)
         .background(Theme.background)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Theme.line).frame(height: 1)
-        }
         .onAppear { loadCurrent() }
         .onChange(of: currentIndex) {
             flush()
             loadCurrent()
         }
         .onDisappear { flush() }
+    }
+
+    private var canvas: some View {
+        ZStack {
+            Color(uiColor: .secondarySystemBackground)
+            ScratchCanvas(drawing: $drawing, tool: tool, onChanged: handleDrawing)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var toolbarBar: some View {
+        ScratchToolbar(
+            color: $color,
+            width: $width,
+            eraser: $eraser,
+            onToolChange: applyTool,
+            onClear: clear,
+            canClear: !drawing.strokes.isEmpty
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Theme.paper)
     }
 
     private var handle: some View {
@@ -343,9 +379,16 @@ struct ScratchSplitPanel: View {
                     if !isDragging {
                         isDragging = true
                         dragStartHeight = height
+                        dragStartWidth = panelWidth
                     }
-                    let next = dragStartHeight - value.translation.height
-                    height = min(max(next, 220), 720)
+                    switch axis {
+                    case .vertical:
+                        let next = dragStartHeight - value.translation.height
+                        height = min(max(next, 200), 760)
+                    case .horizontal:
+                        let next = dragStartWidth - value.translation.width
+                        panelWidth = min(max(next, 260), 760)
+                    }
                 }
                 .onEnded { _ in
                     isDragging = false
