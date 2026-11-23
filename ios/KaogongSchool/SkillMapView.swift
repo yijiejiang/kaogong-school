@@ -44,49 +44,46 @@ struct SkillMapView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let data {
-                        summary(data)
-                        Picker("科目", selection: $selectedSubject) {
-                            Text("全部").tag("")
-                            ForEach(subjects, id: \.self) { subject in
-                                Text(subject).tag(subject)
-                            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let data {
+                    summary(data)
+                    Picker("科目", selection: $selectedSubject) {
+                        Text("全部").tag("")
+                        ForEach(subjects, id: \.self) { subject in
+                            Text(subject).tag(subject)
                         }
-                        .pickerStyle(.segmented)
-
-                        Picker("筛选", selection: $focus) {
-                            Text("全部").tag("all")
-                            Text("只看薄弱").tag("weak")
-                            Text("只看待复习").tag("due")
-                        }
-                        .pickerStyle(.segmented)
-
-                        ForEach(groups) { group in
-                            moduleCard(group)
-                        }
-                    } else if loading {
-                        ProgressView("正在生成技能地图…")
-                            .frame(maxWidth: .infinity, minHeight: 240)
-                    } else {
-                        ContentUnavailableView(
-                            "暂无技能",
-                            systemImage: "target",
-                            description: Text(error ?? "先在资料库上传资料，入库后会自动挖掘技能。")
-                        )
                     }
+                    .pickerStyle(.segmented)
+    
+                    Picker("筛选", selection: $focus) {
+                        Text("全部").tag("all")
+                        Text("只看薄弱").tag("weak")
+                        Text("只看待复习").tag("due")
+                    }
+                    .pickerStyle(.segmented)
+    
+                    ForEach(groups) { group in
+                        moduleCard(group)
+                    }
+                } else if loading {
+                    ProgressView("正在生成技能地图…")
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                } else {
+                    ContentUnavailableView(
+                        "暂无技能",
+                        systemImage: "target",
+                        description: Text(error ?? "先在资料库上传资料，入库后会自动挖掘技能。")
+                    )
                 }
-                .padding()
             }
-            .background(Theme.background.ignoresSafeArea())
-            .navigationTitle("技能地图")
-            .task { await load() }
-            .refreshable { await load() }
-            .sheet(item: $selectedSkill) { skill in
-                SkillMapDetailSheet(skill: skill)
-            }
+            .padding()
+        }
+        .background(Theme.background.ignoresSafeArea())
+        .task { await load() }
+        .refreshable { await load() }
+        .sheet(item: $selectedSkill) { skill in
+            SkillMapDetailSheet(skill: skill)
         }
     }
 

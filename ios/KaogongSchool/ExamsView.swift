@@ -317,8 +317,9 @@ private struct ExamPlayerView: View {
     @State private var ticker: Task<Void, Never>?
     @State private var saveTask: Task<Void, Never>?
     @State private var showSubmitConfirm = false
-    @State private var showScratchPad = false
+    @State private var showScratchPanel = false
     @State private var scratchIndex = 0
+    @State private var scratchHeight: CGFloat = 360
     @StateObject private var scratchStore = ScratchStore.shared
 
     private var answeredCount: Int {
@@ -362,7 +363,20 @@ private struct ExamPlayerView: View {
                             }
                             .padding()
                         }
+                        if showScratchPanel {
+                            ScratchSplitPanel(
+                                examId: examId,
+                                questions: attempt.exam.questions.enumerated().map {
+                                    (id: $0.element.id, index: $0.offset + 1)
+                                },
+                                currentIndex: $scratchIndex,
+                                height: $scratchHeight,
+                                onClose: { showScratchPanel = false }
+                            )
+                            .transition(.move(edge: .bottom))
+                        }
                     }
+                    .animation(.easeInOut(duration: 0.22), value: showScratchPanel)
                 }
             } else if let error {
                 ContentUnavailableView(
@@ -395,21 +409,6 @@ private struct ExamPlayerView: View {
         } message: {
             Text("已作答 \(answeredCount) / \(attempt?.exam.questions.count ?? 0) 题")
         }
-        .sheet(isPresented: $showScratchPad) {
-            if let attempt {
-                ScratchPadView(
-                    examId: examId,
-                    questions: attempt.exam.questions.enumerated().map {
-                        (
-                            id: $0.element.id,
-                            index: $0.offset + 1,
-                            title: $0.element.knowledgePointName
-                        )
-                    },
-                    currentIndex: $scratchIndex
-                )
-            }
-        }
     }
 
     private func header(_ attempt: AttemptStart) -> some View {
@@ -424,14 +423,19 @@ private struct ExamPlayerView: View {
             }
             Spacer()
             Button {
-                scratchIndex = 0
-                showScratchPad = true
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    showScratchPanel.toggle()
+                }
             } label: {
-                Image(systemName: "scribble.variable")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.ink)
+                Image(
+                    systemName: showScratchPanel
+                        ? "scribble.variable"
+                        : "square.and.pencil"
+                )
+                .font(.subheadline)
+                .foregroundStyle(showScratchPanel ? Theme.accent : Theme.ink)
             }
-            .accessibilityLabel("打开草稿纸")
+            .accessibilityLabel(showScratchPanel ? "收起草稿" : "打开草稿")
             Label(timeText, systemImage: "clock")
                 .font(.subheadline.bold())
                 .foregroundStyle(remaining < 60 ? .red : Theme.ink)
@@ -527,7 +531,11 @@ private struct ExamPlayerView: View {
                 Spacer()
                 Button {
                     scratchIndex = index - 1
-                    showScratchPad = true
+                    if !showScratchPanel {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            showScratchPanel = true
+                        }
+                    }
                 } label: {
                     Label(
                         hasDraft ? "草稿已写" : "草稿",

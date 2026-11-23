@@ -33,155 +33,152 @@ struct KnowledgeMiningView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
+            Section {
+                Picker("类型", selection: $tab) {
+                    ForEach(Tab.allCases, id: \.self) { item in
+                        Text(item.rawValue).tag(item)
+                    }
+                }
+                .pickerStyle(.segmented)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(filters) { item in
+                            Button {
+                                filter = item.value
+                                Task { await load() }
+                            } label: {
+                                Text(item.label)
+                                    .font(.caption.weight(.medium))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(filter == item.value ? Theme.solid : Theme.paper)
+                                    .foregroundStyle(filter == item.value ? Theme.onSolid : Theme.muted)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+    
+            if let error {
                 Section {
-                    Picker("类型", selection: $tab) {
-                        ForEach(Tab.allCases, id: \.self) { item in
-                            Text(item.rawValue).tag(item)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(filters) { item in
-                                Button {
-                                    filter = item.value
-                                    Task { await load() }
-                                } label: {
-                                    Text(item.label)
-                                        .font(.caption.weight(.medium))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 5)
-                                        .background(filter == item.value ? Theme.solid : Theme.paper)
-                                        .foregroundStyle(filter == item.value ? Theme.onSolid : Theme.muted)
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+            }
+    
+            if busy {
+                Section {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("正在抽取，可能需要几分钟…").font(.caption)
                     }
                 }
-
-                if let error {
-                    Section {
-                        Text(error).font(.caption).foregroundStyle(.red)
-                    }
-                }
-
-                if busy {
-                    Section {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("正在抽取，可能需要几分钟…").font(.caption)
-                        }
-                    }
-                }
-
-                if loading {
-                    ProgressView("加载中…")
-                } else if tab == .units {
-                    if units.isEmpty {
-                        ContentUnavailableView(
-                            "暂无知识单元",
-                            systemImage: "sparkles",
-                            description: Text("先上传资料，或在资料库重新索引。")
-                        )
-                    } else {
-                        ForEach(units) { unit in
-                            Button {
-                                selectedUnit = unit
-                            } label: {
-                                unitRow(unit)
-                            }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .leading) {
-                                if unit.status != "approved" {
-                                    Button("通过") { Task { await setUnit(unit, "approved") } }
-                                        .tint(.green)
-                                }
-                            }
-                            .swipeActions(edge: .trailing) {
-                                if unit.status != "rejected" {
-                                    Button("驳回", role: .destructive) {
-                                        Task { await setUnit(unit, "rejected") }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            }
+    
+            if loading {
+                ProgressView("加载中…")
+            } else if tab == .units {
+                if units.isEmpty {
+                    ContentUnavailableView(
+                        "暂无知识单元",
+                        systemImage: "sparkles",
+                        description: Text("先上传资料，或在资料库重新索引。")
+                    )
                 } else {
-                    if skills.isEmpty {
-                        ContentUnavailableView(
-                            "暂无技能",
-                            systemImage: "target",
-                            description: Text("知识单元抽取后会自动聚类出技能。")
-                        )
-                    } else {
-                        ForEach(skills) { skill in
-                            Button {
-                                selectedSkill = skill
-                            } label: {
-                                skillRow(skill)
+                    ForEach(units) { unit in
+                        Button {
+                            selectedUnit = unit
+                        } label: {
+                            unitRow(unit)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .leading) {
+                            if unit.status != "approved" {
+                                Button("通过") { Task { await setUnit(unit, "approved") } }
+                                    .tint(.green)
                             }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .leading) {
-                                if skill.status != "approved" {
-                                    Button("通过") { Task { await setSkill(skill, "approved") } }
-                                        .tint(.green)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            if unit.status != "rejected" {
+                                Button("驳回", role: .destructive) {
+                                    Task { await setUnit(unit, "rejected") }
                                 }
                             }
-                            .swipeActions(edge: .trailing) {
-                                if skill.status != "rejected" {
-                                    Button("驳回", role: .destructive) {
-                                        Task { await setSkill(skill, "rejected") }
-                                    }
+                        }
+                    }
+                }
+            } else {
+                if skills.isEmpty {
+                    ContentUnavailableView(
+                        "暂无技能",
+                        systemImage: "target",
+                        description: Text("知识单元抽取后会自动聚类出技能。")
+                    )
+                } else {
+                    ForEach(skills) { skill in
+                        Button {
+                            selectedSkill = skill
+                        } label: {
+                            skillRow(skill)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .leading) {
+                            if skill.status != "approved" {
+                                Button("通过") { Task { await setSkill(skill, "approved") } }
+                                    .tint(.green)
+                            }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            if skill.status != "rejected" {
+                                Button("驳回", role: .destructive) {
+                                    Task { await setSkill(skill, "rejected") }
                                 }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("知识挖掘")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        if materials.isEmpty {
-                            Text("没有可抽取的资料")
-                        }
-                        ForEach(materials) { material in
-                            Button(material.title) {
-                                Task { await extract(material) }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.triangle.2.circlepath")
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if materials.isEmpty {
+                        Text("没有可抽取的资料")
                     }
-                    .disabled(busy)
+                    ForEach(materials) { material in
+                        Button(material.title) {
+                            Task { await extract(material) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
                 }
+                .disabled(busy)
             }
-            .task { await load() }
-            .refreshable { await load() }
-            .sheet(item: $selectedUnit) { unit in
-                UnitDetailSheet(unit: unit) {
-                    selectedUnit = nil
-                    Task { await load() }
-                }
+        }
+        .task { await load() }
+        .refreshable { await load() }
+        .sheet(item: $selectedUnit) { unit in
+            UnitDetailSheet(unit: unit) {
+                selectedUnit = nil
+                Task { await load() }
             }
-            .sheet(item: $selectedSkill) { skill in
-                SkillDetailSheet(skill: skill) {
-                    selectedSkill = nil
-                    Task { await load() }
-                }
+        }
+        .sheet(item: $selectedSkill) { skill in
+            SkillDetailSheet(skill: skill) {
+                selectedSkill = nil
+                Task { await load() }
             }
-            .alert("完成", isPresented: Binding(
-                get: { notice != nil },
-                set: { if !$0 { notice = nil } }
-            )) {
-                Button("好", role: .cancel) {}
-            } message: {
-                Text(notice ?? "")
-            }
+        }
+        .alert("完成", isPresented: Binding(
+            get: { notice != nil },
+            set: { if !$0 { notice = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(notice ?? "")
         }
     }
 

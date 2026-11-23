@@ -39,8 +39,9 @@ final class ScratchStore: ObservableObject {
     func load(examId: String) {
         guard !loadedExamIds.contains(examId) else { return }
         loadedExamIds.insert(examId)
-        let url = fileURL(examId: examId)
-        guard let data = try? Data(contentsOf: url) else { return }
+        guard let data = try? Data(contentsOf: fileURL(examId: examId)) else {
+            return
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let rows = try? decoder.decode([ScratchDraft].self, from: data) else {
@@ -68,8 +69,16 @@ final class ScratchStore: ObservableObject {
         return empty
     }
 
+    func drawing(examId: String, questionId: String, index: Int) -> PKDrawing {
+        let draft = draft(examId: examId, questionId: questionId, index: index)
+        return (try? PKDrawing(data: draft.drawing)) ?? PKDrawing()
+    }
+
+    func hasContent(questionId: String) -> Bool {
+        !(drafts[questionId]?.drawing.isEmpty ?? true)
+    }
+
     func update(examId: String, questionId: String, index: Int, drawing: PKDrawing) {
-        let data = drawing.dataRepresentation()
         var draft = drafts[questionId] ?? ScratchDraft(
             id: questionId,
             examId: examId,
@@ -78,38 +87,19 @@ final class ScratchStore: ObservableObject {
             drawing: Data(),
             updatedAt: Date()
         )
-        draft.drawing = data
+        draft.drawing = drawing.dataRepresentation()
         draft.updatedAt = Date()
         drafts[questionId] = draft
         save(examId: examId)
     }
 
     func clear(examId: String, questionId: String, index: Int) {
-        var draft = drafts[questionId] ?? ScratchDraft(
-            id: questionId,
+        update(
             examId: examId,
             questionId: questionId,
-            questionIndex: index,
-            drawing: Data(),
-            updatedAt: Date()
+            index: index,
+            drawing: PKDrawing()
         )
-        draft.drawing = Data()
-        draft.updatedAt = Date()
-        drafts[questionId] = draft
-        save(examId: examId)
-    }
-
-    func drawings(examId: String) -> [(index: Int, questionId: String, drawing: PKDrawing)] {
-        load(examId: examId)
-        return drafts.values
-            .filter { $0.examId == examId && !$0.drawing.isEmpty }
-            .compactMap { draft in
-                guard let drawing = try? PKDrawing(data: draft.drawing) else {
-                    return nil
-                }
-                return (draft.questionIndex, draft.questionId, drawing)
-            }
-            .sorted { $0.0 < $1.0 }
     }
 
     private func save(examId: String) {
@@ -136,7 +126,7 @@ struct ScratchCanvas: UIViewRepresentable {
         view.isOpaque = false
         view.alwaysBounceVertical = true
         view.alwaysBounceHorizontal = true
-        view.contentSize = CGSize(width: 2000, height: 2000)
+        view.contentSize = CGSize(width: 4000, height: 4000)
         view.drawing = drawing
         view.tool = tool
         view.delegate = context.coordinator
@@ -144,35 +134,295 @@ struct ScratchCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ view: PKCanvasView, context: Context) {
+        // 只在外部主动切换内容时重设画布，避免打断正在写的笔画
+        context.coordinator.tool = tool
         view.tool = tool
-        if view.drawing.dataRepresentation() != drawing.dataRepresentation() {
+        if context.coordinator.isProgrammaticUpdate { return }
+        let current = view.drawing.dataRepresentation()
+        let target = drawing.dataRepresentation()
+        if current != target {
+            context.coordinator.isProgrammaticUpdate = true
             view.drawing = drawing
+            context.coordinator.isProgrammaticUpdate = false
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onChanged: onChanged)
+        Coordinator(onChanged: onChanged, tool: tool)
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
-        private let onChanged: (PKDrawing) -> Void
-        private var lastSave = Date.distantPast
+        var onChanged: (PKDrawing) -> Void
+        var tool: PKTool
+        var isProgrammaticUpdate = false
 
-        init(onChanged: @escaping (PKDrawing) -> Void) {
+        init(onChanged: @escaping (PKDrawing) -> Void, tool: PKTool) {
             self.onChanged = onChanged
+            self.tool = tool
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            let now = Date()
-            // 落笔过程中降低写盘频率，停笔后立即保存
-            guard now.timeIntervalSince(lastSave) > 0.6 else { return }
-            lastSave = now
+            guard !isProgrammaticUpdate else { return }
             onChanged(canvasView.drawing)
         }
     }
 }
 
-/// 草稿纸：一页一笔，按题目切换。
+/// 共享的笔色/粗细面板，分屏和全屏都用它。
+struct ScratchToolbar: View {
+    @Binding var color: UIColor
+    @Binding var width: Double
+    @Binding var eraser: Bool
+    var onToolChange: () -> Void
+    var onClear: () -> Void
+    var canClear: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(
+                [
+                    (UIColor.label, "黑"),
+                    (UIColor.systemRed, "红"),
+                    (UIColor.systemBlue, "蓝"),
+                    (UIColor.systemGreen, "绿"),
+                ],
+                id: \.1
+            ) { value, label in
+                Button {
+                    color = value
+                    eraser = false
+                    onToolChange()
+                } label: {
+                    Circle()
+                        .fill(Color(uiColor: value))
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Circle().stroke(
+                                color == value && !eraser
+                                    ? Theme.accent
+                                    : Color.clear,
+                                lineWidth: 2
+                            )
+                        )
+                        .accessibilityLabel(label)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider().frame(height: 20)
+
+            Button {
+                eraser = true
+                onToolChange()
+            } label: {
+                Image(systemName: "eraser")
+                    .foregroundStyle(eraser ? Theme.accent : Theme.ink)
+            }
+            .accessibilityLabel("橡皮")
+
+            Slider(value: $width, in: 1...10, step: 0.5) { _ in
+                eraser = false
+                onToolChange()
+            }
+            .frame(maxWidth: 120)
+
+            Spacer(minLength: 0)
+
+            Button {
+                onClear()
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(canClear ? Theme.ink : Theme.muted)
+            }
+            .disabled(!canClear)
+            .accessibilityLabel("清空草稿")
+        }
+    }
+}
+
+/// 做题页底部的草稿分屏，可拖动调整高度。
+struct ScratchSplitPanel: View {
+    let examId: String
+    let questions: [(id: String, index: Int)]
+    @Binding var currentIndex: Int
+    @Binding var height: CGFloat
+    var onClose: () -> Void
+
+    @StateObject private var store = ScratchStore.shared
+    @State private var drawing = PKDrawing()
+    @State private var tool: PKTool = PKInkingTool(.pen, color: .label, width: 2.5)
+    @State private var color: UIColor = .label
+    @State private var width: Double = 2.5
+    @State private var eraser = false
+    @State private var saveTask: Task<Void, Never>?
+    @State private var isDragging = false
+    @State private var dragStartHeight: CGFloat = 0
+
+    private var current: (id: String, index: Int)? {
+        guard questions.indices.contains(currentIndex) else { return nil }
+        return questions[currentIndex]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            handle
+            picker
+            Divider()
+            ZStack {
+                Color(uiColor: .secondarySystemBackground)
+                ScratchCanvas(drawing: $drawing, tool: tool, onChanged: handleDrawing)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(6)
+            }
+            Divider()
+            ScratchToolbar(
+                color: $color,
+                width: $width,
+                eraser: $eraser,
+                onToolChange: applyTool,
+                onClear: clear,
+                canClear: !drawing.strokes.isEmpty
+            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Theme.paper)
+        }
+        .frame(height: height)
+        .background(Theme.background)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.line).frame(height: 1)
+        }
+        .onAppear { loadCurrent() }
+        .onChange(of: currentIndex) {
+            flush()
+            loadCurrent()
+        }
+        .onDisappear { flush() }
+    }
+
+    private var handle: some View {
+        VStack(spacing: 4) {
+            Capsule()
+                .fill(Theme.line)
+                .frame(width: 40, height: 5)
+            HStack {
+                Text(current.map { "第 \($0.index) 题草稿" } ?? "草稿")
+                    .font(.caption.bold())
+                    .foregroundStyle(Theme.ink)
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.muted)
+                }
+                .accessibilityLabel("收起草稿")
+            }
+            .padding(.horizontal, 14)
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if !isDragging {
+                        isDragging = true
+                        dragStartHeight = height
+                    }
+                    let next = dragStartHeight - value.translation.height
+                    height = min(max(next, 220), 720)
+                }
+                .onEnded { _ in
+                    isDragging = false
+                }
+        )
+    }
+
+    private var picker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(Array(questions.enumerated()), id: \.element.id) { position, item in
+                    let filled = store.hasContent(questionId: item.id)
+                    Button {
+                        currentIndex = position
+                    } label: {
+                        Text("\(item.index)")
+                            .font(.caption2.bold())
+                            .frame(width: 28, height: 28)
+                            .background(
+                                position == currentIndex ? Theme.accent : Theme.paper
+                            )
+                            .foregroundStyle(
+                                position == currentIndex ? Theme.onAccent : Theme.muted
+                            )
+                            .overlay(
+                                Circle().stroke(
+                                    filled && position != currentIndex
+                                        ? Theme.accent.opacity(0.6)
+                                        : Theme.line
+                                )
+                            )
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 6)
+        }
+    }
+
+    private func handleDrawing(_ value: PKDrawing) {
+        // 状态立即更新，保证切换题目或关闭时拿到的是最新笔迹
+        drawing = value
+        guard let item = current else { return }
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            store.update(
+                examId: examId,
+                questionId: item.id,
+                index: item.index,
+                drawing: value
+            )
+        }
+    }
+
+    private func flush() {
+        saveTask?.cancel()
+        guard let item = current else { return }
+        store.update(
+            examId: examId,
+            questionId: item.id,
+            index: item.index,
+            drawing: drawing
+        )
+    }
+
+    private func loadCurrent() {
+        guard let item = current else { return }
+        drawing = store.drawing(
+            examId: examId,
+            questionId: item.id,
+            index: item.index
+        )
+    }
+
+    private func applyTool() {
+        tool = eraser
+            ? PKEraserTool(.vector)
+            : PKInkingTool(.pen, color: color, width: CGFloat(width))
+    }
+
+    private func clear() {
+        drawing = PKDrawing()
+        guard let item = current else { return }
+        store.clear(examId: examId, questionId: item.id, index: item.index)
+    }
+}
+
+/// 全屏草稿，交卷后查看用。
 struct ScratchPadView: View {
     let examId: String
     let questions: [(id: String, index: Int, title: String)]
@@ -182,10 +432,10 @@ struct ScratchPadView: View {
     @StateObject private var store = ScratchStore.shared
     @State private var drawing = PKDrawing()
     @State private var tool: PKTool = PKInkingTool(.pen, color: .label, width: 2.5)
-    @State private var eraser = false
     @State private var color: UIColor = .label
     @State private var width: Double = 2.5
-    @State private var didLoad = false
+    @State private var eraser = false
+    @State private var saveTask: Task<Void, Never>?
 
     private var current: (id: String, index: Int, title: String)? {
         guard questions.indices.contains(currentIndex) else { return nil }
@@ -199,39 +449,41 @@ struct ScratchPadView: View {
                 Divider()
                 ZStack {
                     Theme.background
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(uiColor: .secondarySystemBackground))
+                    ScratchCanvas(drawing: $drawing, tool: tool, onChanged: handleDrawing)
                         .padding(10)
-                    ScratchCanvas(
-                        drawing: $drawing,
-                        tool: tool,
-                        onChanged: persist
-                    )
-                    .padding(10)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(10)
                 }
                 Divider()
-                toolbar
+                ScratchToolbar(
+                    color: $color,
+                    width: $width,
+                    eraser: $eraser,
+                    onToolChange: applyTool,
+                    onClear: clear,
+                    canClear: !drawing.strokes.isEmpty
+                )
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+                .background(Theme.paper)
             }
             .navigationTitle("草稿纸")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") {
-                        persist(drawing)
+                        flush()
                         dismiss()
                     }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("清空") { clear() }
-                        .disabled(drawing.strokes.isEmpty)
                 }
             }
             .onAppear { loadCurrent() }
             .onChange(of: currentIndex) {
-                persist(drawing)
+                flush()
                 loadCurrent()
             }
+            .onDisappear { flush() }
         }
     }
 
@@ -239,22 +491,16 @@ struct ScratchPadView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 7) {
                 ForEach(Array(questions.enumerated()), id: \.element.id) { position, item in
-                    let filled = !(store.drafts[item.id]?.drawing.isEmpty ?? true)
+                    let filled = store.hasContent(questionId: item.id)
                     Button {
                         currentIndex = position
                     } label: {
                         Text("\(item.index)")
                             .font(.caption2.bold())
                             .frame(width: 30, height: 30)
-                            .background(
-                                position == currentIndex
-                                    ? Theme.accent
-                                    : Theme.paper
-                            )
+                            .background(position == currentIndex ? Theme.accent : Theme.paper)
                             .foregroundStyle(
-                                position == currentIndex
-                                    ? Theme.onAccent
-                                    : Theme.muted
+                                position == currentIndex ? Theme.onAccent : Theme.muted
                             )
                             .overlay(
                                 Circle().stroke(
@@ -274,91 +520,51 @@ struct ScratchPadView: View {
         .background(Theme.background)
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 14) {
-            ForEach(
-                [
-                    (UIColor.label, "黑"),
-                    (UIColor.systemRed, "红"),
-                    (UIColor.systemBlue, "蓝"),
-                    (UIColor.systemGreen, "绿"),
-                ],
-                id: \.1
-            ) { value, label in
-                Button {
-                    color = value
-                    eraser = false
-                    applyTool()
-                } label: {
-                    Circle()
-                        .fill(Color(uiColor: value))
-                        .frame(width: 22, height: 22)
-                        .overlay(
-                            Circle().stroke(
-                                color == value && !eraser
-                                    ? Theme.accent
-                                    : Color.clear,
-                                lineWidth: 2
-                            )
-                        )
-                        .accessibilityLabel(label)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Divider().frame(height: 22)
-
-            Button {
-                eraser = true
-                tool = PKEraserTool(.vector)
-            } label: {
-                Image(systemName: "eraser")
-                    .foregroundStyle(eraser ? Theme.accent : Theme.ink)
-            }
-            .accessibilityLabel("橡皮")
-
-            Divider().frame(height: 22)
-
-            Slider(value: $width, in: 1...10, step: 0.5) { _ in
-                applyTool()
-            }
-            .frame(width: 110)
-
-            Spacer()
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(Theme.paper)
-    }
-
-    private func applyTool() {
-        tool = PKInkingTool(.pen, color: color, width: CGFloat(width))
-    }
-
-    private func loadCurrent() {
+    private func handleDrawing(_ value: PKDrawing) {
+        drawing = value
         guard let item = current else { return }
-        let draft = store.draft(
-            examId: examId,
-            questionId: item.id,
-            index: item.index
-        )
-        drawing = (try? PKDrawing(data: draft.drawing)) ?? PKDrawing()
-        didLoad = true
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            store.update(
+                examId: examId,
+                questionId: item.id,
+                index: item.index,
+                drawing: value
+            )
+        }
     }
 
-    private func persist(_ value: PKDrawing) {
-        guard didLoad, let item = current else { return }
+    private func flush() {
+        saveTask?.cancel()
+        guard let item = current else { return }
         store.update(
             examId: examId,
             questionId: item.id,
             index: item.index,
-            drawing: value
+            drawing: drawing
         )
     }
 
-    private func clear() {
+    private func loadCurrent() {
         guard let item = current else { return }
+        drawing = store.drawing(
+            examId: examId,
+            questionId: item.id,
+            index: item.index
+        )
+    }
+
+    private func applyTool() {
+        tool = eraser
+            ? PKEraserTool(.vector)
+            : PKInkingTool(.pen, color: color, width: CGFloat(width))
+    }
+
+    private func clear() {
         drawing = PKDrawing()
+        guard let item = current else { return }
         store.clear(examId: examId, questionId: item.id, index: item.index)
     }
 }

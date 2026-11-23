@@ -15,130 +15,126 @@ struct LibraryView: View {
     @State private var searchResult: SearchResponse?
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("在资料库中搜索") {
-                    HStack(spacing: 8) {
-                        TextField("搜索知识点、原文或题型", text: $query)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .onSubmit { Task { await search() } }
-                        Button {
-                            Task { await search() }
-                        } label: {
-                            if searching {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "magnifyingglass")
-                            }
-                        }
-                        .disabled(searching || query.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    if let searchResult {
-                        searchResults(searchResult)
-                    }
-                }
-
-                Section("知识树") {
-                    NavigationLink {
-                        KnowledgeTreeView()
+        List {
+            Section("在资料库中搜索") {
+                HStack(spacing: 8) {
+                    TextField("搜索知识点、原文或题型", text: $query)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { Task { await search() } }
+                    Button {
+                        Task { await search() }
                     } label: {
-                        HStack {
-                            Label("浏览知识树", systemImage: "tree")
-                            Spacer()
-                            Text("\(tree.count) 个节点")
-                                .font(.caption2)
-                                .foregroundStyle(Theme.muted)
+                        if searching {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "magnifyingglass")
                         }
                     }
+                    .disabled(searching || query.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-
-                Section("资料列表") {
-                    if loading {
-                        ProgressView("正在加载资料…")
-                    } else if materials.isEmpty {
-                        Text("资料库还是空的。点右上角上传文件、导入网页或添加示例资料。")
-                            .font(.caption)
+                if let searchResult {
+                    searchResults(searchResult)
+                }
+            }
+    
+            Section("知识树") {
+                NavigationLink {
+                    KnowledgeTreeView()
+                } label: {
+                    HStack {
+                        Label("浏览知识树", systemImage: "tree")
+                        Spacer()
+                        Text("\(tree.count) 个节点")
+                            .font(.caption2)
                             .foregroundStyle(Theme.muted)
-                    } else {
-                        ForEach(materials) { material in
-                            NavigationLink {
-                                MaterialDetailView(materialId: material.id)
-                            } label: {
-                                materialRow(material)
-                            }
-                        }
-                    }
-                }
-
-                if let error {
-                    Section {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
                     }
                 }
             }
-            .listStyle(.insetGrouped)
-            .background(Theme.background.ignoresSafeArea())
-            .navigationTitle("资料库")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            showImporter = true
+    
+            Section("资料列表") {
+                if loading {
+                    ProgressView("正在加载资料…")
+                } else if materials.isEmpty {
+                    Text("资料库还是空的。点右上角上传文件、导入网页或添加示例资料。")
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                } else {
+                    ForEach(materials) { material in
+                        NavigationLink {
+                            MaterialDetailView(materialId: material.id)
                         } label: {
-                            Label("上传文件", systemImage: "square.and.arrow.up")
+                            materialRow(material)
                         }
-                        Button {
-                            urlText = ""
-                            showURLAlert = true
-                        } label: {
-                            Label("导入网页", systemImage: "link")
-                        }
-                        Button {
-                            Task { await importSample() }
-                        } label: {
-                            Label("添加示例资料", systemImage: "sparkles")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
                     }
                 }
             }
-            .overlay {
-                if busy {
-                    ProgressView("正在处理…")
-                        .padding()
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+    
+            if let error {
+                Section {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
-            .fileImporter(
-                isPresented: $showImporter,
-                allowedContentTypes: [.pdf, .plainText, .image, .audio, .movie, .data],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    if let url = urls.first { Task { await upload(url) } }
-                case .failure(let failure):
-                    error = failure.localizedDescription
-                }
-            }
-            .alert("导入网页", isPresented: $showURLAlert) {
-                TextField("https://…", text: $urlText)
-                Button("取消", role: .cancel) {}
-                Button("导入") {
-                    Task { await importURL() }
-                }
-            } message: {
-                Text("只支持公网 http/https 地址。")
-            }
-            .task { await load() }
-            .refreshable { await load() }
         }
+        .listStyle(.insetGrouped)
+        .background(Theme.background.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        showImporter = true
+                    } label: {
+                        Label("上传文件", systemImage: "square.and.arrow.up")
+                    }
+                    Button {
+                        urlText = ""
+                        showURLAlert = true
+                    } label: {
+                        Label("导入网页", systemImage: "link")
+                    }
+                    Button {
+                        Task { await importSample() }
+                    } label: {
+                        Label("添加示例资料", systemImage: "sparkles")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .overlay {
+            if busy {
+                ProgressView("正在处理…")
+                    .padding()
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .fileImporter(
+            isPresented: $showImporter,
+            allowedContentTypes: [.pdf, .plainText, .image, .audio, .movie, .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first { Task { await upload(url) } }
+            case .failure(let failure):
+                error = failure.localizedDescription
+            }
+        }
+        .alert("导入网页", isPresented: $showURLAlert) {
+            TextField("https://…", text: $urlText)
+            Button("取消", role: .cancel) {}
+            Button("导入") {
+                Task { await importURL() }
+            }
+        } message: {
+            Text("只支持公网 http/https 地址。")
+        }
+        .task { await load() }
+        .refreshable { await load() }
     }
 
     private func load() async {
