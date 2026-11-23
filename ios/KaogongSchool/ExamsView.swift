@@ -321,11 +321,12 @@ private struct ExamPlayerView: View {
     @State private var scratchIndex = 0
     @State private var scratchHeight: CGFloat = 360
     @State private var scratchWidth: CGFloat = 380
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var viewSize: CGSize = .zero
 
     /// 横屏时左右分屏，竖屏时上下分屏。
+    /// iPad 竖屏的 sizeClass 同样是 regular，所以用实际宽高比判断。
     private var isLandscape: Bool {
-        horizontalSizeClass == .regular
+        viewSize.width > viewSize.height
     }
     @StateObject private var scratchStore = ScratchStore.shared
 
@@ -384,6 +385,13 @@ private struct ExamPlayerView: View {
             }
         }
         .background(Theme.background.ignoresSafeArea())
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { viewSize = geometry.size }
+                    .onChange(of: geometry.size) { viewSize = geometry.size }
+            }
+        )
         .navigationTitle(attempt?.exam.title ?? "考试")
         .navigationBarTitleDisplayMode(.inline)
         .task { await start() }
