@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     asr_local_model: str = "small"
 
-    max_upload_bytes: int = 50 * 1024 * 1024
+    max_upload_bytes: int = 200 * 1024 * 1024
     max_url_bytes: int = 5 * 1024 * 1024
     chunk_size: int = 800
     chunk_overlap: int = 100

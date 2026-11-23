@@ -178,6 +178,8 @@ open ios/KaogongSchool.xcodeproj
 
 原生 SwiftUI，最低 iOS 17。对话、学情、考试、资料、知识挖掘、技能地图、设置都在，另外支持视频关键帧、扫码连接和连接历史。
 
+考试作答时可以随手打开草稿纸，用 Apple Pencil 手写演算，每道题各自保存一页，交卷后还能回看。
+
 iPad 连后端最省事的办法：
 
 1. Mac 和 iPad 连同一个 Wi-Fi

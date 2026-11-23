@@ -317,6 +317,9 @@ private struct ExamPlayerView: View {
     @State private var ticker: Task<Void, Never>?
     @State private var saveTask: Task<Void, Never>?
     @State private var showSubmitConfirm = false
+    @State private var showScratchPad = false
+    @State private var scratchIndex = 0
+    @StateObject private var scratchStore = ScratchStore.shared
 
     private var answeredCount: Int {
         answers.values.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
@@ -392,6 +395,21 @@ private struct ExamPlayerView: View {
         } message: {
             Text("已作答 \(answeredCount) / \(attempt?.exam.questions.count ?? 0) 题")
         }
+        .sheet(isPresented: $showScratchPad) {
+            if let attempt {
+                ScratchPadView(
+                    examId: examId,
+                    questions: attempt.exam.questions.enumerated().map {
+                        (
+                            id: $0.element.id,
+                            index: $0.offset + 1,
+                            title: $0.element.knowledgePointName
+                        )
+                    },
+                    currentIndex: $scratchIndex
+                )
+            }
+        }
     }
 
     private func header(_ attempt: AttemptStart) -> some View {
@@ -405,6 +423,15 @@ private struct ExamPlayerView: View {
                     .foregroundStyle(Theme.muted)
             }
             Spacer()
+            Button {
+                scratchIndex = 0
+                showScratchPad = true
+            } label: {
+                Image(systemName: "scribble.variable")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.ink)
+            }
+            .accessibilityLabel("打开草稿纸")
             Label(timeText, systemImage: "clock")
                 .font(.subheadline.bold())
                 .foregroundStyle(remaining < 60 ? .red : Theme.ink)
@@ -465,6 +492,7 @@ private struct ExamPlayerView: View {
         do {
             let started = try await APIClient.shared.startAttempt(examId: examId)
             attempt = started
+            scratchStore.load(examId: examId)
             answers = started.answers.compactMapValues { value in
                 let text = value.display
                 return text == "未作答" ? nil : text
@@ -487,7 +515,8 @@ private struct ExamPlayerView: View {
     }
 
     private func questionView(index: Int, question: ExamQuestion) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let hasDraft = !(scratchStore.drafts[question.id]?.drawing.isEmpty ?? true)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("第 \(index) 题")
                     .font(.caption.bold())
@@ -496,6 +525,20 @@ private struct ExamPlayerView: View {
                     .font(.caption2)
                     .foregroundStyle(Theme.muted)
                 Spacer()
+                Button {
+                    scratchIndex = index - 1
+                    showScratchPad = true
+                } label: {
+                    Label(
+                        hasDraft ? "草稿已写" : "草稿",
+                        systemImage: hasDraft
+                            ? "scribble.variable"
+                            : "square.and.pencil"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(hasDraft ? Theme.accent : Theme.muted)
+                }
+                .buttonStyle(.plain)
                 Text("\(Int(question.score)) 分")
                     .font(.caption2)
                     .foregroundStyle(Theme.muted)

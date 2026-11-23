@@ -100,16 +100,37 @@ async def create_uploaded_material(db: AsyncSession, file: UploadFile) -> Materi
             "当前支持 PDF、DOCX、TXT、Markdown、PNG/JPG 图片和常见音频格式。"
         )
 
-    data = await file.read()
-    if not data:
-        raise ParseError("文件为空。")
-    if len(data) > settings.max_upload_bytes:
-        raise ParseError("文件超过 50 MB 上限。")
-
     material_id = uuid.uuid4().hex
     destination = UPLOAD_DIR / material_id / filename
     destination.parent.mkdir(parents=True, exist_ok=True)
-    await asyncio.to_thread(destination.write_bytes, data)
+
+    # 分块流式落盘，避免大文件整体读进内存
+    size = 0
+    limit = settings.max_upload_bytes
+    chunk_size = 1024 * 1024
+    try:
+        with destination.open("wb") as handle:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > limit:
+                    raise ParseError(
+                        f"文件超过 {limit // (1024 * 1024)} MB 上限。"
+                        "可以在 backend/.env 里改 MAX_UPLOAD_BYTES。"
+                    )
+                await asyncio.to_thread(handle.write, chunk)
+    except ParseError:
+        await asyncio.to_thread(shutil.rmtree, destination.parent, True)
+        raise
+    except Exception as exc:  # 落盘失败要和解析错误区分
+        await asyncio.to_thread(shutil.rmtree, destination.parent, True)
+        raise ParseError(f"文件写入失败：{exc}") from exc
+
+    if size == 0:
+        await asyncio.to_thread(shutil.rmtree, destination.parent, True)
+        raise ParseError("文件为空。")
 
     if suffix in IMAGE_SUFFIXES:
         kind = "image"
@@ -125,7 +146,7 @@ async def create_uploaded_material(db: AsyncSession, file: UploadFile) -> Materi
         file_path=f"uploads/{material_id}/{filename}",
         filename=filename,
         mime_type=file.content_type or "",
-        size_bytes=len(data),
+        size_bytes=size,
         status="pending",
     )
     db.add(material)
