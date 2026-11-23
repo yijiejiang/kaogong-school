@@ -341,7 +341,7 @@ export default function LibraryPage() {
                 <div>
                   <h2 className="text-base font-semibold">添加资料</h2>
                   <p className="mt-1 text-xs text-muted">
-                    单个文件上限 200 MB（可在后端 .env 调整）；支持 PDF/Word/Markdown/图片，图片走 OCR。
+                    单个文件上限 500 MB（可在后端 .env 调整）；支持 PDF/Word/Markdown/图片，图片走 OCR。
                   </p>
                 </div>
                 <button
