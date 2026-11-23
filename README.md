@@ -188,6 +188,39 @@ iPad 连后端最省事的办法：
 
 不在同一个网络就上 Tailscale，步骤见 [deploy/tailscale.md](deploy/tailscale.md)。打 TestFlight 看 [deploy/testflight.md](deploy/testflight.md)。
 
+### 没有苹果开发者账号能装吗
+
+能。99 美元/年的开发者计划（Developer Program）只影响上架 App Store 和分发 TestFlight，自己在设备上装不需要它。
+
+**免费 Apple ID 就能做的事**
+
+用普通 Apple ID 登录 Xcode，把 iPhone / iPad 插到 Mac 上直接运行：
+
+1. Xcode 打开工程，Target → Signing & Capabilities
+2. Team 换成你自己的 Apple ID（Add an Account 里登录后就会出现「个人团队」）
+3. Bundle Identifier 改成唯一的，例如 `com.yourname.kaogong`
+4. 选中你的设备，Run
+
+限制：
+
+- **签名 7 天过期**，过期后 App 打不开，要重新连 Mac 跑一次
+- 最多 3 台设备，同时只能有 10 个 App ID
+- 不能安装到别人设备上分发
+
+**只想要长期使用又不想付费**
+
+- 用免费的 **iOS App Store 的 TestFlight 不行**（需要付费账号），但可以自己用 Xcode 装
+- 或者干脆用 Web 端，Safari「添加到主屏幕」，功能和 iPad 版几乎一致，PWA 壳无需签名
+
+**必须付费的情况**
+
+- 要发给别人测试（TestFlight）
+- 要上架 App Store
+- 需要用无线调试、后台能力、CloudKit 等需要 entitlement 的功能
+- 希望签名一年有效、不用每 7 天重装
+
+工程里的 `DEVELOPMENT_TEAM = ND6298Q5HK` 是我的团队 ID，你 fork 后要在 Xcode 里换成自己的，否则签名会失败。
+
 ---
 
 ## 部署

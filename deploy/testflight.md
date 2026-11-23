@@ -1,5 +1,9 @@
 # TestFlight 上传清单
 
+> 这一步需要付费的 Apple Developer Program（99 美元/年）。
+> 只是想在自己的 iPhone / iPad 上装来用，不需要付费账号，用免费 Apple ID 在 Xcode 里直接运行即可，
+> 代价是签名 7 天过期。详见 README 的「没有苹果开发者账号能装吗」。
+
 当前工程已经配置好：
 
 - Bundle ID：`com.kaogong.school`
