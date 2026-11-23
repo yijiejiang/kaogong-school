@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     default_user_id: str = "local-user"
     mock_llm: bool = False
     enable_scheduler: bool = True
-    enable_knowledge_extraction: bool = True
+    # 默认关闭：知识与技能改由对话中明确要求时保存，入库不再自动抽取
+    enable_knowledge_extraction: bool = False
 
     llm_api_base: str = ""
     llm_api_key: str = ""

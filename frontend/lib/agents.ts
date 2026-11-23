@@ -64,6 +64,14 @@ export const AGENTS: Record<string, AgentMeta> = {
     dotClass: "bg-[#a95a6d]",
     available: true,
   },
+  tutor: {
+    name: "问答老师",
+    short: "问",
+    description: "做题疑问 · 按技能讲解",
+    avatarClass: "bg-[#e3f0ea] text-[#256b52]",
+    dotClass: "bg-[#3f8f6c]",
+    available: true,
+  },
   user: {
     name: "我",
     short: "我",
@@ -90,6 +98,7 @@ export const ROLE_OPTIONS = [
   { key: "organizer", label: "资料整理", hint: "P1 已接入" },
   { key: "knowledge", label: "知识点整理", hint: "P1 已接入" },
   { key: "grader", label: "改卷老师", hint: "已接入" },
+  { key: "tutor", label: "问答老师", hint: "做题答疑" },
 ];
 
 export function agentMeta(author: string): AgentMeta {

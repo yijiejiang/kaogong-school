@@ -29,6 +29,23 @@ def _wait_until_ready(client: TestClient, material_id: str) -> dict:
     return target
 
 
+import contextlib
+
+
+@contextlib.contextmanager
+def _auto_extraction():
+    """临时开启入库自动抽取，供依赖它的用例使用。"""
+    from app.config import get_settings
+
+    settings = get_settings()
+    previous = settings.enable_knowledge_extraction
+    settings.enable_knowledge_extraction = True
+    try:
+        yield
+    finally:
+        settings.enable_knowledge_extraction = previous
+
+
 def _seed_sample(client: TestClient) -> dict:
     response = client.post("/api/materials/seed-sample")
     assert response.status_code == 200
@@ -1010,7 +1027,7 @@ def test_chunk_type_classifier() -> None:
 
 
 def test_knowledge_extraction_review_flow() -> None:
-    with TestClient(app) as client:
+    with _auto_extraction(), TestClient(app) as client:
         material = _seed_sample(client)
 
         units = client.get(
@@ -1073,7 +1090,7 @@ def test_knowledge_extraction_review_flow() -> None:
 
 
 def test_reindex_clears_knowledge_units() -> None:
-    with TestClient(app) as client:
+    with _auto_extraction(), TestClient(app) as client:
         material = _seed_sample(client)
         before = client.get(
             "/api/knowledge/units",
@@ -1387,8 +1404,7 @@ async def test_create_point_from_unit_proposal() -> None:
     from app.db.models import KnowledgePoint, KnowledgeUnit
     from app.db.session import SessionLocal
 
-    with TestClient(app) as client:
-        _seed_sample(client)
+    with _auto_extraction(), TestClient(app) as client:
         material_id = _seed_sample(client)["id"]
 
     name = "pytest 新考点候选"
@@ -1484,3 +1500,99 @@ def test_usage_summary_includes_provider_cost() -> None:
         ).json()
         assert any(item["value"] == "monthly" for item in billing["modes"])
         assert "deepseek" in billing["price_catalog"]
+
+
+async def test_save_skill_and_knowledge() -> None:
+    from sqlalchemy import delete
+
+    from app.db.models import KnowledgeUnit, Skill
+    from app.db.session import SessionLocal
+    from app.tools import library
+
+    with TestClient(app):
+        pass
+
+    async with SessionLocal() as db:
+        await db.execute(delete(Skill).where(Skill.id.like("skill-manual-%")))
+        await db.commit()
+
+    saved = await library.save_skill(
+        name="测试专用截位法",
+        module="资料分析",
+        summary="按选项差距决定截几位。",
+        steps=["看选项首位", "决定截 2 或 3 位"],
+        signals=["选项首位不同"],
+        pitfalls=["分子也截位导致误差"],
+        exam_pattern="资料分析除法计算",
+    )
+    assert saved["status"] == "success"
+    assert saved["skill"]["name"] == "测试专用截位法"
+    assert saved["skill"]["module"] == "资料分析"
+    assert saved["skill"]["status"] == "approved"
+
+    knowledge = await library.save_knowledge(
+        title="测试单题分析",
+        summary="这道题考增长率比较。",
+        steps=["先求增速", "再比较大小"],
+        exam_pattern="增长率比较",
+    )
+    assert knowledge["status"] == "success"
+
+    async with SessionLocal() as db:
+        skill = await db.get(Skill, saved["skill"]["id"])
+        assert skill is not None
+        assert skill.status == "approved"
+        unit = await db.get(KnowledgeUnit, knowledge["unit_id"])
+        assert unit is not None
+        assert unit.title == "测试单题分析"
+        assert unit.status == "approved"
+
+        # 清理
+        await db.delete(skill)
+        await db.delete(unit)
+        await db.commit()
+
+
+def test_knowledge_agent_has_save_tools() -> None:
+    from app.agents.factory import create_root_agent
+    from app.schemas.settings import LlmSettings
+
+    agent = create_root_agent(
+        LlmSettings(api_base="https://example.com/v1", api_key="k", default_model="t")
+    )
+    knowledge = next(a for a in agent.sub_agents if a.name == "knowledge")
+    tool_names = {getattr(t, "__name__", "") for t in knowledge.tools}
+    assert "save_skill" in tool_names
+    assert "save_knowledge" in tool_names
+
+
+def test_tutor_agent_registered() -> None:
+    from app.agents.factory import create_root_agent
+    from app.schemas.settings import ROLE_KEYS, LlmSettings
+
+    assert "tutor" in ROLE_KEYS
+
+    agent = create_root_agent(
+        LlmSettings(api_base="https://example.com/v1", api_key="k", default_model="t")
+    )
+    names = {sub.name for sub in agent.sub_agents}
+    assert "tutor" in names
+
+    tutor = next(a for a in agent.sub_agents if a.name == "tutor")
+    tool_names = {getattr(t, "__name__", "") for t in tutor.tools}
+    assert {"list_skill_catalog", "find_skills", "load_module_skills"} <= tool_names
+
+
+async def test_skill_catalog_and_module_load() -> None:
+    from app.tools import library
+
+    catalog = await library.list_skill_catalog()
+    assert catalog["status"] == "success"
+    assert catalog["total"] > 0
+    modules = {item["module"] for item in catalog["modules"]}
+    assert any("资料分析" in item for item in modules)
+
+    loaded = await library.load_module_skills("资料分析")
+    assert loaded["status"] == "success"
+    assert loaded["count"] > 0
+    assert all(skill["module"] == "资料分析" for skill in loaded["skills"])

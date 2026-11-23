@@ -154,7 +154,7 @@ export default function SkillMapPage() {
               技能地图
             </h1>
             <p className="mt-1.5 max-w-2xl text-xs leading-5 text-[#6b6459]">
-              先看哪个模块最弱，再逐项点开技能。颜色越深越熟练，灰块表示还没练过。
+              技能按花生十三体系分类。先看哪个模块最弱，再逐项点开；颜色越深越熟练，灰块表示还没练过。
             </p>
           </div>
           <div className="flex gap-2">

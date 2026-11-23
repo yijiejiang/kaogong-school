@@ -8,6 +8,7 @@ ROLE_KEYS = [
     "organizer",
     "knowledge",
     "grader",
+    "tutor",
 ]
 
 ROLE_LABELS = {
@@ -18,6 +19,7 @@ ROLE_LABELS = {
     "organizer": "资料整理",
     "knowledge": "知识点整理",
     "grader": "改卷老师",
+    "tutor": "问答老师",
 }
 
 

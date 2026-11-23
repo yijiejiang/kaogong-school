@@ -258,6 +258,72 @@ async def find_skills(
     }
 
 
+async def list_skill_catalog(
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """List all skill names grouped by module.
+
+    Use this first when you are unsure which skill covers the student's question.
+    Returns only names and modules, so it stays small.
+    """
+    async with SessionLocal() as db:
+        rows = list(
+            (
+                await db.execute(
+                    select(Skill)
+                    .where(Skill.status != "rejected")
+                    .order_by(Skill.module, Skill.name)
+                )
+            ).scalars()
+        )
+    groups: dict[str, list[str]] = {}
+    for skill in rows:
+        groups.setdefault(f"{skill.subject}·{skill.module}", []).append(
+            skill.name
+        )
+    return {
+        "status": "success",
+        "total": len(rows),
+        "modules": [
+            {"module": key, "count": len(names), "skills": names}
+            for key, names in groups.items()
+        ],
+    }
+
+
+async def load_module_skills(
+    module: str,
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """Load the full content of every skill in one module.
+
+    Use this when the student asks about a whole module, or when one question
+    may involve several skills. Keep the module string short, e.g. 资料分析.
+
+    Args:
+        module: Module name, e.g. 资料分析 / 数量关系 / 判断推理.
+    """
+    module = module.strip()
+    if not module:
+        return {"status": "error", "message": "请指定模块。"}
+    async with SessionLocal() as db:
+        rows = list(
+            (
+                await db.execute(
+                    select(Skill)
+                    .where(Skill.status != "rejected", Skill.module == module)
+                    .order_by(Skill.name)
+                )
+            ).scalars()
+        )
+    return {
+        "status": "success",
+        "module": module,
+        "count": len(rows),
+        "skills": [_skill_payload(skill) for skill in rows],
+    }
+
+
 async def get_skill_detail(
     skill_id_or_name: str,
     tool_context: ToolContext | None = None,
@@ -398,6 +464,168 @@ async def get_skill_overview(
         "user_id": user_id,
         "counts": counts,
         "weak_skills": weak[:12],
+    }
+
+
+async def save_skill(
+    name: str,
+    module: str,
+    summary: str,
+    steps: list[str],
+    signals: list[str] | None = None,
+    pitfalls: list[str] | None = None,
+    variants: list[str] | None = None,
+    exam_pattern: str = "",
+    knowledge_point_id: str = "",
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """Save a reusable skill into the skill map.
+
+    Only call this when the student explicitly asks to save or add a skill.
+    Args:
+        name: Skill name, short and concrete, e.g. 截位直除法.
+        module: Module the skill belongs to, e.g. 资料分析 / 数量关系 / 判断推理.
+        summary: One or two sentences on what the skill does.
+        steps: Executable steps.
+        signals: Keywords that reveal this skill in a question.
+        pitfalls: Common mistakes.
+        variants: Common variations.
+        exam_pattern: How this skill is tested.
+        knowledge_point_id: Optional knowledge point id from the tree.
+    """
+    import hashlib
+
+    from app.db.models import Skill
+
+    module = module.strip()
+    name = name.strip()
+    if not module or not name:
+        return {"status": "error", "message": "技能名称和模块不能为空。"}
+
+    subject = "申论" if module in {"申论"} else "行测"
+    key = f"manual|{module}|{name}"
+    skill_id = f"skill-manual-{hashlib.sha1(key.encode()).hexdigest()[:16]}"
+
+    async with SessionLocal() as db:
+        point = None
+        if knowledge_point_id:
+            from app.db.models import KnowledgePoint
+
+            point = await db.get(KnowledgePoint, knowledge_point_id)
+
+        row = await db.get(Skill, skill_id)
+        if row is None:
+            row = Skill(
+                id=skill_id,
+                normalized_name=key[:128],
+                status="approved",
+            )
+            db.add(row)
+        row.name = name[:128]
+        row.subject = point.subject if point else subject
+        row.module = module[:64]
+        row.knowledge_point_id = point.id if point else ""
+        row.knowledge_point_name = point.name if point else ""
+        row.summary = summary.strip()[:1000]
+        row.steps_json = json.dumps(steps or [], ensure_ascii=False)
+        row.pitfalls_json = json.dumps(pitfalls or [], ensure_ascii=False)
+        row.signals_json = json.dumps(signals or [], ensure_ascii=False)
+        row.variants_json = json.dumps(variants or [], ensure_ascii=False)
+        row.exam_patterns_json = json.dumps(
+            [exam_pattern] if exam_pattern.strip() else [], ensure_ascii=False
+        )
+        row.confidence = 0.9
+        await db.commit()
+        await db.refresh(row)
+        payload = _skill_payload(row)
+
+    return {
+        "status": "success",
+        "message": f"已保存技能「{name}」到 {module}。",
+        "skill": payload,
+    }
+
+
+async def save_knowledge(
+    title: str,
+    summary: str,
+    steps: list[str] | None = None,
+    pitfalls: list[str] | None = None,
+    signals: list[str] | None = None,
+    exam_pattern: str = "",
+    variant: str = "",
+    material_id: str = "",
+    knowledge_point_id: str = "",
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """Save a deep analysis of one specific question into knowledge mining.
+
+    Use this for a single question analysis, not for a reusable skill.
+    Only call it when the student explicitly asks to save the analysis.
+    Args:
+        title: Short title of this knowledge note.
+        summary: The analysis conclusion.
+        steps: Solving steps for this question.
+        pitfalls: Traps in this question.
+        signals: How to recognise this question type.
+        exam_pattern: What this question tests.
+        variant: One variation of the question.
+        material_id: Optional source material id.
+        knowledge_point_id: Optional knowledge point id.
+    """
+    import uuid
+
+    from app.db.models import KnowledgeUnit
+
+    title = title.strip()
+    summary = summary.strip()
+    if not title or not summary:
+        return {"status": "error", "message": "标题和内容不能为空。"}
+
+    point = None
+    async with SessionLocal() as db:
+        if knowledge_point_id:
+            from app.db.models import KnowledgePoint
+
+            point = await db.get(KnowledgePoint, knowledge_point_id)
+
+        row = KnowledgeUnit(
+            id=uuid.uuid4().hex,
+            material_id=material_id or "",
+            chunk_id="",
+            chunk_type="question",
+            title=title[:255],
+            summary=summary,
+            definition="",
+            conditions_json="[]",
+            steps_json=json.dumps(steps or [], ensure_ascii=False),
+            pitfalls_json=json.dumps(pitfalls or [], ensure_ascii=False),
+            examples_json="[]",
+            exam_pattern=exam_pattern.strip(),
+            signals_json=json.dumps(signals or [], ensure_ascii=False),
+            variants_json=json.dumps(
+                [variant] if variant.strip() else [], ensure_ascii=False
+            ),
+            connections_json="[]",
+            question_design_json="[]",
+            knowledge_point_id=point.id if point else "",
+            knowledge_point_name=point.name if point else "",
+            skill_name="",
+            skill_id="",
+            confidence=0.9,
+            status="approved",
+            evidence_json="[]",
+            extraction_model="manual",
+        )
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        unit_id = row.id
+
+    return {
+        "status": "success",
+        "message": f"已保存知识「{title}」到知识挖掘。",
+        "unit_id": unit_id,
     }
 
 

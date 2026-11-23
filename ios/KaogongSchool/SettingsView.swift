@@ -53,6 +53,7 @@ struct SettingsView: View {
         "organizer",
         "knowledge",
         "grader",
+        "tutor",
     ]
 
     private var emptyRole: SettingsBundle.RoleConfig {
@@ -495,6 +496,7 @@ struct SettingsView: View {
         case "organizer": return "资料整理"
         case "knowledge": return "知识点整理"
         case "grader": return "改卷老师"
+        case "tutor": return "问答老师"
         default: return key
         }
     }

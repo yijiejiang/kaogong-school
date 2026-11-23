@@ -229,7 +229,8 @@ export default function KnowledgeMiningPage() {
               知识挖掘
             </h1>
             <p className="mt-1.5 max-w-2xl text-xs leading-5 text-[#6b6459]">
-              把资料片段提炼成可复习的知识单元和可复用技能。审核通过的内容会作为知识卡片的候选来源。
+              单题的深度分析存在这里。在对话里让知识老师讲完一道题，说「保存到知识挖掘」就会出现在下面。
+              技能地图是另一层：保存的是可反复套用的方法，不是单道题。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -249,14 +250,15 @@ export default function KnowledgeMiningPage() {
               type="button"
               onClick={handleExtract}
               disabled={extracting || !materialId}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+              title="从整份资料批量抽取知识单元。日常用法是在对话里让知识老师分析单题后保存。"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d8d0c4] bg-white px-3 text-xs font-medium text-[#6b6459] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {extracting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <RefreshCw className="h-3.5 w-3.5" />
               )}
-              {extracting ? "抽取中" : "重新抽取"}
+              {extracting ? "抽取中" : "批量抽取"}
             </button>
           </div>
         </div>
@@ -371,8 +373,8 @@ export default function KnowledgeMiningPage() {
               <EmptyState
                 text={
                   materialId
-                    ? "这份资料在当前筛选下没有抽取结果，可以切换状态或点击右上角「重新抽取」。"
-                    : "当前筛选下暂无知识单元。先在资料库上传资料，或选择资料后点击「重新抽取」。"
+                    ? "这份资料在当前筛选下没有内容。"
+                    : "还没有知识笔记。在对话里让知识老师分析一道题，然后说「保存到知识挖掘」。"
                 }
               />
             ) : (
@@ -392,7 +394,7 @@ export default function KnowledgeMiningPage() {
         ) : (
           <div className="mt-4 space-y-3">
             {visibleSkills.length === 0 ? (
-              <EmptyState text="当前筛选下暂无技能。知识单元抽取后会自动聚类出技能。" />
+              <EmptyState text="当前筛选下暂无技能。技能地图已内置花生十三体系，需要新增时在对话里说「把这个技能加到技能地图」。" />
             ) : (
               visibleSkills.map((skill) => (
                 <SkillCard

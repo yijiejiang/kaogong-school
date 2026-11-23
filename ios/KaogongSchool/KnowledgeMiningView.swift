@@ -82,9 +82,9 @@ struct KnowledgeMiningView: View {
             } else if tab == .units {
                 if units.isEmpty {
                     ContentUnavailableView(
-                        "暂无知识单元",
+                        "暂无知识笔记",
                         systemImage: "sparkles",
-                        description: Text("先上传资料，或在资料库重新索引。")
+                        description: Text("在对话里让知识老师分析一道题，再说「保存到知识挖掘」。")
                     )
                 } else {
                     ForEach(units) { unit in
@@ -114,7 +114,7 @@ struct KnowledgeMiningView: View {
                     ContentUnavailableView(
                         "暂无技能",
                         systemImage: "target",
-                        description: Text("知识单元抽取后会自动聚类出技能。")
+                        description: Text("技能地图已内置花生十三体系，需要新增时在对话里说「把这个技能加到技能地图」。")
                     )
                 } else {
                     ForEach(skills) { skill in
@@ -144,6 +144,8 @@ struct KnowledgeMiningView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Text("从整份资料批量抽取")
+                        .font(.caption2)
                     if materials.isEmpty {
                         Text("没有可抽取的资料")
                     }
