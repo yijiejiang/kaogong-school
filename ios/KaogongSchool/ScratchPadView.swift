@@ -257,6 +257,7 @@ struct ScratchSplitPanel: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var isDragging = false
     @State private var dragStartHeight: CGFloat = 0
+    @State private var loadedQuestionId = ""
 
     private var current: (id: String, index: Int)? {
         guard questions.indices.contains(currentIndex) else { return nil }
@@ -305,10 +306,24 @@ struct ScratchSplitPanel: View {
             Capsule()
                 .fill(Theme.line)
                 .frame(width: 40, height: 5)
-            HStack {
-                Text(current.map { "第 \($0.index) 题草稿" } ?? "草稿")
+            HStack(spacing: 6) {
+                Text("草稿")
                     .font(.caption.bold())
                     .foregroundStyle(Theme.ink)
+                if let item = current {
+                    Text("第 \(item.index) 题")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.accentSoft)
+                        .foregroundStyle(Theme.accent)
+                        .clipShape(Capsule())
+                    if !drawing.strokes.isEmpty {
+                        Image(systemName: "pencil.tip")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
                 Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
@@ -373,17 +388,20 @@ struct ScratchSplitPanel: View {
     }
 
     private func handleDrawing(_ value: PKDrawing) {
-        // 状态立即更新，保证切换题目或关闭时拿到的是最新笔迹
+        // 立即更新状态，并始终写回"当前画布所属的那道题"
         drawing = value
-        guard let item = current else { return }
+        let questionId = loadedQuestionId
+        guard !questionId.isEmpty,
+              let index = questions.first(where: { $0.id == questionId })?.index
+        else { return }
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
             store.update(
                 examId: examId,
-                questionId: item.id,
-                index: item.index,
+                questionId: questionId,
+                index: index,
                 drawing: value
             )
         }
@@ -391,17 +409,21 @@ struct ScratchSplitPanel: View {
 
     private func flush() {
         saveTask?.cancel()
-        guard let item = current else { return }
+        let questionId = loadedQuestionId
+        guard !questionId.isEmpty,
+              let index = questions.first(where: { $0.id == questionId })?.index
+        else { return }
         store.update(
             examId: examId,
-            questionId: item.id,
-            index: item.index,
+            questionId: questionId,
+            index: index,
             drawing: drawing
         )
     }
 
     private func loadCurrent() {
         guard let item = current else { return }
+        loadedQuestionId = item.id
         drawing = store.drawing(
             examId: examId,
             questionId: item.id,
@@ -436,6 +458,7 @@ struct ScratchPadView: View {
     @State private var width: Double = 2.5
     @State private var eraser = false
     @State private var saveTask: Task<Void, Never>?
+    @State private var loadedQuestionId = ""
 
     private var current: (id: String, index: Int, title: String)? {
         guard questions.indices.contains(currentIndex) else { return nil }
@@ -522,15 +545,18 @@ struct ScratchPadView: View {
 
     private func handleDrawing(_ value: PKDrawing) {
         drawing = value
-        guard let item = current else { return }
+        let questionId = loadedQuestionId
+        guard !questionId.isEmpty,
+              let index = questions.first(where: { $0.id == questionId })?.index
+        else { return }
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
             store.update(
                 examId: examId,
-                questionId: item.id,
-                index: item.index,
+                questionId: questionId,
+                index: index,
                 drawing: value
             )
         }
@@ -538,17 +564,21 @@ struct ScratchPadView: View {
 
     private func flush() {
         saveTask?.cancel()
-        guard let item = current else { return }
+        let questionId = loadedQuestionId
+        guard !questionId.isEmpty,
+              let index = questions.first(where: { $0.id == questionId })?.index
+        else { return }
         store.update(
             examId: examId,
-            questionId: item.id,
-            index: item.index,
+            questionId: questionId,
+            index: index,
             drawing: drawing
         )
     }
 
     private func loadCurrent() {
         guard let item = current else { return }
+        loadedQuestionId = item.id
         drawing = store.drawing(
             examId: examId,
             questionId: item.id,
