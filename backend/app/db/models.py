@@ -222,6 +222,9 @@ class Question(Base):
     explanation: Mapped[str] = mapped_column(Text, default="")
     difficulty: Mapped[int] = mapped_column(Integer, default=3)
     source: Mapped[str] = mapped_column(String(32), default="seed")
+    # 细化标签，例如 牛吃草 / 概率 / 新闻类 / 说理类
+    tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    material_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     quality_status: Mapped[str] = mapped_column(String(16), default="approved")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow

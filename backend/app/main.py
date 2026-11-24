@@ -16,6 +16,7 @@ from app.api import (
     materials,
     notifications,
     plan,
+    questions,
     settings,
     users,
 )
@@ -66,6 +67,7 @@ app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(materials.router)
 app.include_router(knowledge.router)
+app.include_router(questions.router)
 app.include_router(asr.router)
 app.include_router(exams.router)
 app.include_router(analytics.router)

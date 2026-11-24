@@ -32,6 +32,7 @@ async def generate_exam(
     difficulty: str,
     tool_context: ToolContext,
     ai_count: int = 0,
+    tags: list[str] | None = None,
 ) -> dict:
     """Generate a real exam from the question bank and return an exam card.
 
@@ -43,6 +44,8 @@ async def generate_exam(
         difficulty: "easy", "medium", "hard", or "mixed".
         ai_count: How many questions should be AI-authored, 0-30. Use 0 unless
             the student explicitly asks for AI 原创题.
+        tags: Optional fine-grained question tags from the question bank,
+            e.g. ["牛吃草", "概率问题"]. Only pass tags the student named.
     """
     user_id = tool_context.state.get("user_id", "local-user")
     async with SessionLocal() as db:
@@ -58,6 +61,7 @@ async def generate_exam(
                 ai_count=ai_count,
                 llm=llm,
                 user_id=user_id,
+                tags=tags,
             )
         except ExamError as exc:
             return {"status": "error", "message": str(exc)}

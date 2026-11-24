@@ -55,6 +55,8 @@ SKILL_COLUMNS = {
 QUESTION_COLUMNS = {
     "skill_id": "VARCHAR(64) NOT NULL DEFAULT ''",
     "skill_name": "VARCHAR(128) NOT NULL DEFAULT ''",
+    "tags_json": "TEXT NOT NULL DEFAULT '[]'",
+    "material_id": "VARCHAR(36) NOT NULL DEFAULT ''",
 }
 
 USAGE_COLUMNS = {
@@ -99,6 +101,12 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_columns(conn)
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_questions_material_id "
+                "ON questions (material_id)"
+            )
+        )
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:

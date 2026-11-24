@@ -35,20 +35,20 @@
 			);
 			sourceTree = "<group>";
 		};
-		AA0000000000000000000021 /* Config */ = {
-			isa = PBXGroup;
-			children = (
-				AA0000000000000000000020 /* Signing.xcconfig */,
-			);
-			path = Config;
-			sourceTree = "<group>";
-		};
 		AA0000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000002 /* KaogongSchool.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000021 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000020 /* Signing.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

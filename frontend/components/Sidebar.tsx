@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Plus,
   Settings,
+  ListChecks,
   Sparkles,
   Wallet,
   X,
@@ -103,6 +104,13 @@ export function Sidebar({
           >
             <Library className="h-4 w-4" />
             资料库
+          </Link>
+          <Link
+            href="/questions"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-[#5f5a4d] transition hover:bg-[#e7e1d6]"
+          >
+            <ListChecks className="h-4 w-4" />
+            题库
           </Link>
           <Link
             href="/knowledge"

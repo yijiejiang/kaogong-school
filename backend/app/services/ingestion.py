@@ -53,6 +53,7 @@ from app.rag.video_slides import (
 )
 from app.services.deepseek_tools import resolve_config as resolve_deepseek
 from app.services.llm import role_model_config
+from app.services.question_extraction import extract_questions
 from app.services.settings_service import load_llm_settings
 from app.services.usage import record_service_usage, record_usage
 
@@ -443,6 +444,24 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                         f"知识抽取失败：{str(exc)[:180]}"
                     )
 
+            question_result = {"questions": 0, "model": "", "warning": ""}
+            job.progress = 0.95
+            job.message = "识别题目"
+            await db.commit()
+
+            async def _question_progress(done: int, total: int) -> None:
+                job.progress = 0.95 + 0.04 * (done / max(total, 1))
+                job.message = f"识别题目 {done}/{total} 批"
+                await db.commit()
+
+            try:
+                question_result = await extract_questions(
+                    db, material.id, llm, progress=_question_progress
+                )
+            except Exception as exc:
+                logger.exception("question extraction failed")
+                question_result["warning"] = f"题目识别失败：{str(exc)[:150]}"
+
             material.status = "ready"
             material.error = ""
             job.status = "done"
@@ -461,6 +480,11 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                     else ""
                 )
                 + (f" 视频幻灯片 {slide_count} 页。" if slide_count else "")
+                + (
+                    f" 识别 {question_result['questions']} 道题目。"
+                    if question_result.get("questions")
+                    else ""
+                )
                 + (" " + " ".join(warnings) if warnings else "")
             )
             ocr_pages = drain_ocr_pages()
@@ -514,6 +538,8 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                     "extraction_warning": extraction.get("warning", ""),
                     "ocr_pages": ocr_pages,
                     "asr_seconds": round(asr_seconds, 1),
+                    "questions": question_result.get("questions", 0),
+                    "question_warning": question_result.get("warning", ""),
                 },
                 ensure_ascii=False,
             )

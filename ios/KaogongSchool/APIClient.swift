@@ -301,6 +301,51 @@ actor APIClient {
         try await get("/api/materials")
     }
 
+    func questions(
+        tag: String = "",
+        module: String = "",
+        materialId: String = "",
+        search: String = ""
+    ) async throws -> [BankQuestion] {
+        var query = ["limit": "300"]
+        if !tag.isEmpty { query["tag"] = tag }
+        if !module.isEmpty { query["module"] = module }
+        if !materialId.isEmpty { query["material_id"] = materialId }
+        if !search.isEmpty { query["search"] = search }
+        return try await get("/api/questions", query: query)
+    }
+
+    func questionTags() async throws -> QuestionTagSummary {
+        try await get("/api/questions/tags")
+    }
+
+    func updateQuestion(
+        id: String,
+        tags: [String]?,
+        module: String?,
+        answer: String?,
+        difficulty: Int?
+    ) async throws -> BankQuestion {
+        var payload: [String: Any] = [:]
+        if let tags { payload["tags"] = tags }
+        if let module { payload["module"] = module }
+        if let answer { payload["answer"] = answer }
+        if let difficulty { payload["difficulty"] = difficulty }
+        return try await send(
+            "/api/questions/\(id)",
+            method: "PATCH",
+            json: payload
+        )
+    }
+
+    func deleteQuestion(id: String) async throws {
+        let _: [String: Bool] = try await send(
+            "/api/questions/\(id)",
+            method: "DELETE",
+            json: [:]
+        )
+    }
+
     func materialDetail(id: String) async throws -> MaterialDetail {
         try await get("/api/materials/\(id)")
     }

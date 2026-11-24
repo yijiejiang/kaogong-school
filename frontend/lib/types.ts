@@ -359,6 +359,32 @@ export type SkillDetail = {
   }>;
 };
 
+export type BankQuestion = {
+  id: string;
+  type: string;
+  subject: string;
+  module: string;
+  knowledge_point_id: string;
+  knowledge_point_name: string;
+  stem: string;
+  options: ExamOption[];
+  answer: string;
+  explanation: string;
+  difficulty: number;
+  source: string;
+  material_id: string;
+  tags: string[];
+  created_at: string;
+};
+
+export type BankTag = { tag: string; count: number };
+export type BankModule = { module: string; count: number };
+export type BankTagsResponse = {
+  total: number;
+  tags: BankTag[];
+  modules: BankModule[];
+};
+
 export type ExamQuestionType = "single" | "multiple" | "short";
 
 export type ExamOption = {

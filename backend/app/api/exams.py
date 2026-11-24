@@ -50,6 +50,7 @@ async def generate(
             ai_count=payload.ai_count,
             llm=llm,
             user_id=payload.user_id,
+            tags=payload.tags,
         )
     except ExamError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

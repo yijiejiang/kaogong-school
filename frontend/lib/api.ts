@@ -6,6 +6,8 @@ import type {
   AttemptStart,
   AttemptState,
   AttemptSummary,
+  BankQuestion,
+  BankTagsResponse,
   BillingOverview,
   ChatMessage,
   ConnectInfo,
@@ -338,6 +340,65 @@ export async function generateExam(config: ExamConfig): Promise<ExamSummary> {
 
 export async function fetchExams(): Promise<ExamSummary[]> {
   return request("/api/exams");
+}
+
+export async function fetchQuestions(options?: {
+  tag?: string;
+  module?: string;
+  subject?: string;
+  materialId?: string;
+  search?: string;
+  limit?: number;
+}): Promise<BankQuestion[]> {
+  const params = new URLSearchParams();
+  if (options?.tag) params.set("tag", options.tag);
+  if (options?.module) params.set("module", options.module);
+  if (options?.subject) params.set("subject", options.subject);
+  if (options?.materialId) params.set("material_id", options.materialId);
+  if (options?.search) params.set("search", options.search);
+  params.set("limit", String(options?.limit ?? 200));
+  return request(`/api/questions?${params.toString()}`);
+}
+
+export async function fetchQuestionTags(): Promise<BankTagsResponse> {
+  return request("/api/questions/tags");
+}
+
+export async function updateQuestion(
+  id: string,
+  payload: Partial<
+    Pick<
+      BankQuestion,
+      | "type"
+      | "subject"
+      | "module"
+      | "stem"
+      | "options"
+      | "answer"
+      | "explanation"
+      | "difficulty"
+      | "tags"
+    >
+  >,
+): Promise<BankQuestion> {
+  return request(`/api/questions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteQuestion(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/questions/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function extractQuestions(
+  materialId: string,
+): Promise<{ status: string; questions: number; model: string; warning: string }> {
+  return request(`/api/questions/extract/${encodeURIComponent(materialId)}`, {
+    method: "POST",
+  });
 }
 
 export async function fetchExam(id: string): Promise<ExamTake> {

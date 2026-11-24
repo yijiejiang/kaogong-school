@@ -1221,3 +1221,53 @@ struct BillingOverview: Decodable {
         case sources
     }
 }
+
+struct BankQuestion: Decodable, Identifiable {
+    let id: String
+    let type: String
+    let subject: String
+    let module: String
+    let knowledgePointName: String
+    let stem: String
+    let options: [ExamOption]
+    let answer: String
+    let explanation: String
+    let difficulty: Int
+    let source: String
+    let materialId: String
+    let tags: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case subject
+        case module
+        case knowledgePointName = "knowledge_point_name"
+        case stem
+        case options
+        case answer
+        case explanation
+        case difficulty
+        case source
+        case materialId = "material_id"
+        case tags
+    }
+}
+
+struct QuestionTagSummary: Decodable {
+    struct TagCount: Decodable, Identifiable {
+        let tag: String
+        let count: Int
+        var id: String { tag }
+    }
+
+    struct ModuleCount: Decodable, Identifiable {
+        let module: String
+        let count: Int
+        var id: String { module }
+    }
+
+    let total: Int
+    let tags: [TagCount]
+    let modules: [ModuleCount]
+}

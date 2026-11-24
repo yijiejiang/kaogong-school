@@ -11,6 +11,7 @@ import {
   Globe2,
   Image as ImageIcon,
   Layers3,
+  ListChecks,
   Loader2,
   RefreshCw,
   Search,
@@ -302,6 +303,13 @@ export default function LibraryPage() {
           </Link>
           <div className="text-sm font-semibold">资料库</div>
           <div className="flex items-center gap-4 text-xs text-muted">
+            <Link
+              href="/questions"
+              className="inline-flex items-center gap-1 font-medium text-ink"
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              题库
+            </Link>
             <Link
               href="/knowledge"
               className="inline-flex items-center gap-1 font-medium text-ink"

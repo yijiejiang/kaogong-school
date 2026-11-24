@@ -10,6 +10,8 @@ class ExamGenerateRequest(BaseModel):
     duration_minutes: int = Field(default=35, ge=5, le=180)
     difficulty: Literal["easy", "medium", "hard", "mixed"] = "medium"
     ai_count: int = Field(default=0, ge=0, le=30)
+    # 按题库标签过滤，例如 ["牛吃草", "工程问题"]
+    tags: list[str] = Field(default_factory=list)
     user_id: str = "local-user"
 
 

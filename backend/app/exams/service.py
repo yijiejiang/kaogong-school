@@ -57,6 +57,7 @@ async def generate_exam(
     ai_count: int = 0,
     llm: LlmSettings | None = None,
     user_id: str = "local-user",
+    tags: list[str] | None = None,
 ) -> Exam:
     question_count = max(1, min(60, question_count))
     duration_minutes = max(5, min(180, duration_minutes))
@@ -120,6 +121,13 @@ async def generate_exam(
         Question.quality_status == "approved",
         Question.type.in_(["single", "multiple", "short"]),
     )
+    tag_filters = [tag.strip() for tag in (tags or []) if tag.strip()]
+    if tag_filters:
+        # 题目标签是 JSON 数组，SQLite/Postgres 都退化为子串匹配
+        for tag in tag_filters:
+            base_statement = base_statement.where(
+                Question.tags_json.contains(json.dumps(tag, ensure_ascii=False)[1:-1])
+            )
     questions = list(
         (await db.execute(_apply_difficulty(base_statement, difficulty))).scalars()
     )

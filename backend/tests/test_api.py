@@ -1630,3 +1630,104 @@ def test_skill_pack_rejects_bad_repo() -> None:
             json={"repo": "not-a-url"},
         )
         assert response.status_code == 400
+
+
+def test_question_bank_endpoints() -> None:
+    with TestClient(app) as client:
+        rows = client.get("/api/questions", params={"limit": 5}).json()
+        assert rows
+        first = rows[0]
+        assert "stem" in first and "tags" in first
+
+        tags = client.get("/api/questions/tags").json()
+        assert tags["total"] > 0
+        assert tags["modules"]
+
+        updated = client.patch(
+            f"/api/questions/{first['id']}",
+            json={"tags": ["牛吃草", "工程问题"], "difficulty": 4},
+        )
+        assert updated.status_code == 200
+        body = updated.json()
+        assert body["tags"] == ["牛吃草", "工程问题"]
+        assert body["difficulty"] == 4
+
+        filtered = client.get(
+            "/api/questions", params={"tag": "牛吃草"}
+        ).json()
+        assert any(item["id"] == first["id"] for item in filtered)
+
+        bad = client.patch(
+            f"/api/questions/{first['id']}", json={"tags": []}
+        )
+        assert bad.status_code == 200
+        client.patch(
+            f"/api/questions/{first['id']}",
+            json={"tags": first["tags"], "difficulty": first["difficulty"]},
+        )
+
+
+def test_exam_generate_filters_by_tag() -> None:
+    with TestClient(app) as client:
+        client.patch(
+            "/api/questions/q-tag-test",
+            json={},
+        )  # 不存在时返回 404，忽略
+        rows = client.get("/api/questions", params={"limit": 1}).json()
+        target = rows[0]
+        client.patch(
+            f"/api/questions/{target['id']}", json={"tags": ["独特标签XYZ"]}
+        )
+        exam = client.post(
+            "/api/exams/generate",
+            json={
+                "subject": target["subject"],
+                "module": target["module"],
+                "question_count": 3,
+                "duration_minutes": 10,
+                "difficulty": "mixed",
+                "tags": ["独特标签XYZ"],
+            },
+        )
+        assert exam.status_code == 200
+        assert exam.json()["question_count"] >= 1
+        client.patch(
+            f"/api/questions/{target['id']}", json={"tags": target["tags"]}
+        )
+
+
+def test_rule_tags_are_fine_grained() -> None:
+    from app.services.question_extraction import _rule_tags
+
+    tags = _rule_tags("牧场上一片青草，每天牧草匀速生长，可供 10 头牛吃 20 天", "数量关系")
+    assert "牛吃草" in tags
+
+    tags = _rule_tags("某项工程，甲单独做 12 天，乙单独做 18 天，合作需要几天", "数量关系")
+    assert "工程问题" in tags
+
+
+def test_split_material_stitches_across_chunks() -> None:
+    from app.services.question_extraction import split_material
+
+    chunks = [
+        ("c1", "1. 甲说今天去钓鱼，乙说如果甲去他就去。\n\nA. 甲去\nB. 乙去"),
+        ("c2", "C. 丙去\nD. 三人都不去"),
+        ("c3", "2. 第二题的题干足够长，可以构成一道题。\n\nA. 甲\nB. 乙\nC. 丙\nD. 丁"),
+    ]
+    pairs = split_material(chunks, limit=10)
+    assert len(pairs) == 2
+    assert all(len(block) >= 30 for _, block in pairs)
+    assert "C. 丙去" in pairs[0][1]
+
+
+def test_fill_missing_recovers_blocks_llm_skipped() -> None:
+    from app.services.question_extraction import _fill_missing
+
+    blocks = [
+        "1. 这是第一道题的题干内容，选项完整。\nA. 甲\nB. 乙\nC. 丙\nD. 丁",
+        "图表页乱码 | 1200 | 1205 | 1210 |",
+        "2. 这是第二道题的题干内容，选项完整。\nA. 子\nB. 丑\nC. 寅\nD. 卯",
+    ]
+    items = [{"chunk_index": 0, "stem": "已识别", "options": [{"key": "A", "text": "甲"}]}]
+    out = _fill_missing(blocks, items)
+    assert [item["chunk_index"] for item in out] == [0, 2]

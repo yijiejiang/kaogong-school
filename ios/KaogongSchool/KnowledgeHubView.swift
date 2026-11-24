@@ -3,12 +3,14 @@ import SwiftUI
 struct KnowledgeHubView: View {
     private enum Section: String, CaseIterable {
         case library = "资料"
+        case questions = "题库"
         case mining = "挖掘"
         case skills = "技能地图"
 
         var title: String {
             switch self {
             case .library: return "资料库"
+            case .questions: return "题库"
             case .mining: return "知识挖掘"
             case .skills: return "技能地图"
             }
@@ -23,6 +25,8 @@ struct KnowledgeHubView: View {
                 switch section {
                 case .library:
                     LibraryView()
+                case .questions:
+                    QuestionBankView()
                 case .mining:
                     KnowledgeMiningView()
                 case .skills:
