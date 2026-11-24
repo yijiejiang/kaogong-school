@@ -1596,3 +1596,37 @@ async def test_skill_catalog_and_module_load() -> None:
     assert loaded["status"] == "success"
     assert loaded["count"] > 0
     assert all(skill["module"] == "资料分析" for skill in loaded["skills"])
+
+
+def test_skill_sources_endpoint() -> None:
+    with TestClient(app) as client:
+        body = client.get("/api/knowledge/skill-sources").json()
+        assert "sources" in body and "packs" in body
+        assert any(pack["key"] == "huasheng13" for pack in body["packs"])
+        assert any(pack["builtin"] for pack in body["packs"])
+
+
+def test_builtin_skill_pack_import() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/knowledge/skill-sources/import",
+            json={"use_builtin": True},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "success"
+        assert body["total"] > 100
+
+        sources = client.get("/api/knowledge/skill-sources").json()["sources"]
+        entry = next(s for s in sources if s["source"] == "huasheng13")
+        assert entry["count"] == body["total"]
+        assert entry["file_count"] > 0
+
+
+def test_skill_pack_rejects_bad_repo() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/knowledge/skill-sources/import",
+            json={"repo": "not-a-url"},
+        )
+        assert response.status_code == 400

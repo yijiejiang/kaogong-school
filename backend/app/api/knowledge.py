@@ -4,6 +4,7 @@ from datetime import UTC, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +98,8 @@ def _skill_out(skill: Skill) -> SkillOut:
         question_design=_list(skill.question_design_json),
         difficulty=skill.difficulty,
         source_unit_ids=_list(skill.source_unit_ids_json),
+        source=skill.source,
+        source_ref=skill.source_ref,
         confidence=skill.confidence,
         status=skill.status,
         created_at=skill.created_at,
@@ -589,4 +592,53 @@ async def extract_material(
         raise HTTPException(status_code=404, detail="资料不存在。")
     llm = await load_llm_settings(db)
     result = await extract_material_units(db, material_id, llm)
+    return {"status": "success", **result}
+
+
+class SkillPackImportRequest(BaseModel):
+    repo: str = ""
+    use_builtin: bool = False
+    source_key: str = "huasheng13"
+
+
+@router.get("/skill-sources")
+async def skill_sources(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """已安装的技能来源，以及可安装的技能包。"""
+    from app.services.skill_packs import known_packs, list_sources
+
+    installed = await list_sources(db)
+    packs = known_packs()
+    installed_keys = {item["source"] for item in installed}
+    for pack in packs:
+        pack["installed"] = pack["key"] in installed_keys
+    return {"sources": installed, "packs": packs}
+
+
+@router.post("/skill-sources/import")
+async def import_skill_pack(
+    payload: SkillPackImportRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """从内置包或 git 仓库导入技能。"""
+    from app.services.skill_packs import (
+        SkillPackError,
+        import_from_repo,
+        install_builtin_pack,
+    )
+
+    try:
+        if payload.use_builtin:
+            result = await install_builtin_pack(db)
+        elif payload.repo.strip():
+            result = await import_from_repo(
+                db, payload.repo.strip(), source_key=payload.source_key
+            )
+        else:
+            raise HTTPException(
+                status_code=400, detail="请提供仓库地址，或选择内置技能包。"
+            )
+    except SkillPackError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "success", **result}

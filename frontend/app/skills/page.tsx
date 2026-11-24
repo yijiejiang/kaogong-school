@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   BookOpenCheck,
+  Boxes,
   CheckCircle2,
   ChevronRight,
   CircleHelp,
@@ -158,6 +159,13 @@ export default function SkillMapPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Link
+              href="/skills/sources"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d8d0c4] bg-white px-3 text-xs font-medium text-[#6b6459]"
+            >
+              <Boxes className="h-3.5 w-3.5" />
+              技能来源
+            </Link>
             <select
               value={subject}
               onChange={(event) => setSubject(event.target.value)}

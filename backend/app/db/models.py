@@ -172,6 +172,9 @@ class Skill(Base):
     question_design_json: Mapped[str] = mapped_column(Text, default="[]")
     difficulty: Mapped[int] = mapped_column(Integer, default=3)
     source_unit_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    # 技能来源：huasheng13 / manual / extraction
+    source: Mapped[str] = mapped_column(String(32), default="manual", index=True)
+    source_ref: Mapped[str] = mapped_column(String(255), default="")
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(

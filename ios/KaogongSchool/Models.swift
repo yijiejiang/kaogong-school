@@ -980,6 +980,8 @@ struct SkillItem: Decodable, Identifiable {
     let questionDesign: [String]
     let difficulty: Int
     let sourceUnitIds: [String]
+    let source: String?
+    let sourceRef: String?
     let confidence: Double
     let status: String
 
@@ -1003,6 +1005,8 @@ struct SkillItem: Decodable, Identifiable {
         case questionDesign = "question_design"
         case difficulty
         case sourceUnitIds = "source_unit_ids"
+        case source
+        case sourceRef = "source_ref"
         case confidence
         case status
     }

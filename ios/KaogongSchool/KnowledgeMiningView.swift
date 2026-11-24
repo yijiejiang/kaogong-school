@@ -524,6 +524,17 @@ private struct SkillDetailSheet: View {
                             }
                         }
                     }
+                    if let source = skill.source, !source.isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("技能来源").font(.caption.bold())
+                            Text(
+                                (source == "huasheng13" ? "花生十三体系" : source)
+                                    + (skill.sourceRef.map { " · \($0)" } ?? "")
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(Theme.muted)
+                        }
+                    }
                     if let units = detail?.units, !units.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("来源资料").font(.caption.bold())

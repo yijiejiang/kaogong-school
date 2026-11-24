@@ -48,6 +48,8 @@ SKILL_COLUMNS = {
     "connections_json": "TEXT NOT NULL DEFAULT '[]'",
     "question_design_json": "TEXT NOT NULL DEFAULT '[]'",
     "difficulty": "INTEGER NOT NULL DEFAULT 3",
+    "source": "VARCHAR(32) NOT NULL DEFAULT 'manual'",
+    "source_ref": "VARCHAR(255) NOT NULL DEFAULT ''",
 }
 
 QUESTION_COLUMNS = {

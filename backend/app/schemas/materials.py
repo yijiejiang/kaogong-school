@@ -206,6 +206,8 @@ class SkillOut(BaseModel):
     question_design: list[str] = Field(default_factory=list)
     difficulty: int = 3
     source_unit_ids: list[str] = Field(default_factory=list)
+    source: str = "manual"
+    source_ref: str = ""
     confidence: float = 0.0
     status: str = "draft"
     created_at: datetime

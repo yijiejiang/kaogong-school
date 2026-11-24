@@ -28,6 +28,7 @@ import type {
   Skill,
   SkillDetail,
   SkillMap,
+  SkillSourcesResponse,
   UsageSummary,
   WeekPlan,
   WeeklyReport,
@@ -268,6 +269,25 @@ export async function updateSkill(
   return request(`/api/knowledge/skills/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchSkillSources(): Promise<SkillSourcesResponse> {
+  return request("/api/knowledge/skill-sources");
+}
+
+export async function importSkillPack(payload: {
+  repo?: string;
+  useBuiltin?: boolean;
+  sourceKey?: string;
+}): Promise<{ status: string; source: string; created: number; total: number }> {
+  return request("/api/knowledge/skill-sources/import", {
+    method: "POST",
+    body: JSON.stringify({
+      repo: payload.repo ?? "",
+      use_builtin: payload.useBuiltin ?? false,
+      source_key: payload.sourceKey ?? "huasheng13",
+    }),
   });
 }
 

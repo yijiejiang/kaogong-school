@@ -322,6 +322,8 @@ async def import_skills(items: list[dict], replace: bool) -> tuple[int, int]:
             row.difficulty = 3
             row.source_unit_ids_json = "[]"
             row.confidence = 0.9
+            row.source = "huasheng13"
+            row.source_ref = item["source"]
             row.status = "approved"
         await db.commit()
     return created, updated

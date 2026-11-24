@@ -257,6 +257,8 @@ export type Skill = {
   connections: SkillConnection[];
   question_design: string[];
   difficulty: number;
+  source: string;
+  source_ref: string;
   source_unit_ids: string[];
   confidence: number;
   status: string;
@@ -313,6 +315,29 @@ export type SkillMapModule = {
   weak_ratio: number;
   average_score: number | null;
   skills: SkillMapItem[];
+};
+
+export type SkillSource = {
+  source: string;
+  label: string;
+  count: number;
+  modules: string[];
+  file_count: number;
+  last_updated: string | null;
+};
+
+export type SkillPack = {
+  key: string;
+  label: string;
+  repo: string;
+  description: string;
+  builtin: boolean;
+  installed: boolean;
+};
+
+export type SkillSourcesResponse = {
+  sources: SkillSource[];
+  packs: SkillPack[];
 };
 
 export type SkillMap = {
