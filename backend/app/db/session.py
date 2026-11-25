@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterator
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import DATA_DIR, get_settings
@@ -9,9 +9,10 @@ from app.db.models import Base
 settings = get_settings()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-_connect_args = (
-    {"timeout": 30} if settings.database_url.startswith("sqlite") else {}
-)
+_is_sqlite = settings.database_url.startswith("sqlite")
+# 写锁等待上限：超时就抛错，而不是让请求一直挂到前端超时。
+_SQLITE_LOCK_TIMEOUT = 10
+_connect_args = {"timeout": _SQLITE_LOCK_TIMEOUT} if _is_sqlite else {}
 engine = create_async_engine(
     settings.database_url,
     echo=False,
@@ -19,6 +20,25 @@ engine = create_async_engine(
     connect_args=_connect_args,
 )
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _configure_sqlite(dbapi_connection, _record) -> None:
+    """把 SQLite 调成适合多请求并发读写的模式。
+
+    WAL：写事务进行时读请求照常进行，一个慢的批量写入不会让整个界面失去响应。
+    busy_timeout：拿不到写锁时最多等这么久就报错，避免请求无限挂起。
+    """
+    if not _is_sqlite:
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute(f"PRAGMA busy_timeout={_SQLITE_LOCK_TIMEOUT * 1000}")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        cursor.close()
+
 
 CHUNK_COLUMNS = {
     "heading_path": "VARCHAR(512) NOT NULL DEFAULT ''",

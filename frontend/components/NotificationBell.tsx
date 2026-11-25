@@ -16,6 +16,7 @@ export function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -56,9 +57,12 @@ export function NotificationBell() {
   const handleRead = async (item: NotificationItem) => {
     if (item.read) return;
     setLoading(true);
+    setError("");
     try {
       await markNotificationRead(item.id);
       await refresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "标记已读失败");
     } finally {
       setLoading(false);
     }
@@ -66,9 +70,12 @@ export function NotificationBell() {
 
   const handleAll = async () => {
     setLoading(true);
+    setError("");
     try {
       await markAllNotificationsRead();
       await refresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "标记已读失败");
     } finally {
       setLoading(false);
     }
@@ -107,6 +114,11 @@ export function NotificationBell() {
               全部已读
             </button>
           </div>
+          {error && (
+            <div className="border-b border-line bg-[#fbe9e7] px-4 py-2 text-[10px] leading-4 text-[#a33a2a]">
+              {error}
+            </div>
+          )}
           <div className="scrollbar-thin max-h-80 overflow-y-auto">
             {items.length === 0 ? (
               <div className="px-4 py-7 text-center text-xs text-muted">

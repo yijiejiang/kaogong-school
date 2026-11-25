@@ -1784,3 +1784,37 @@ def test_answer_key_detector_flags_explanation_book() -> None:
     verdict = detect_answer_key([book])
     assert verdict.is_answer_key is True
     assert "参考答案标记" in verdict.reason
+
+
+def test_sqlite_uses_wal_and_busy_timeout() -> None:
+    """WAL 让批量写入期间读请求照常返回；busy_timeout 防止请求无限挂起。"""
+    import asyncio
+
+    from sqlalchemy import text
+
+    from app.db.session import engine
+
+    async def read_pragmas() -> dict[str, str]:
+        async with engine.connect() as conn:
+            return {
+                name: str((await conn.execute(text(f"PRAGMA {name}"))).scalar())
+                for name in ("journal_mode", "busy_timeout")
+            }
+
+    pragmas = asyncio.run(read_pragmas())
+    assert pragmas["journal_mode"].lower() == "wal"
+    assert int(pragmas["busy_timeout"]) > 0
+
+
+def test_db_busy_returns_readable_error() -> None:
+    """写锁占满时给 503 和可读提示，而不是让请求挂到前端超时。"""
+    import asyncio
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.main import handle_db_busy
+
+    exc = OperationalError("UPDATE", {}, Exception("database is locked"))
+    response = asyncio.run(handle_db_busy(None, exc))
+    assert response.status_code == 503
+    assert "稍后重试" in response.body.decode()
