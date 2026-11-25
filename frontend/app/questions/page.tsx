@@ -50,6 +50,7 @@ export default function QuestionBankPage() {
   const [notice, setNotice] = useState<{
     kind: "success" | "error";
     text: string;
+    retry?: () => void;
   } | null>(null);
   const [editing, setEditing] = useState<BankQuestion | null>(null);
 
@@ -84,16 +85,24 @@ export default function QuestionBankPage() {
     [tagData],
   );
 
-  const runExtract = async (materialId: string) => {
+  const runExtract = async (materialId: string, force = false) => {
     setBusy(materialId);
     try {
-      const result = await extractQuestions(materialId);
-      setNotice({
-        kind: "success",
-        text: `识别完成：新增 ${result.questions} 道题（${result.model || "规则"}）${
-          result.warning ? `。${result.warning}` : ""
-        }`,
-      });
+      const result = await extractQuestions(materialId, force);
+      if (result.skipped === "answer_key") {
+        setNotice({
+          kind: "error",
+          text: result.warning,
+          retry: () => void runExtract(materialId, true),
+        });
+      } else {
+        setNotice({
+          kind: "success",
+          text: `识别完成：新增 ${result.questions} 道题（${result.model || "规则"}）${
+            result.warning ? `。${result.warning}` : ""
+          }`,
+        });
+      }
       await load();
     } catch (error) {
       setNotice({
@@ -203,9 +212,28 @@ export default function QuestionBankPage() {
             )}
           >
             <span>{notice.text}</span>
-            <button type="button" onClick={() => setNotice(null)} aria-label="关闭">
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {notice.retry && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const retry = notice.retry;
+                    setNotice(null);
+                    retry?.();
+                  }}
+                  className="whitespace-nowrap rounded-md border border-[#a33a2a] px-2 py-1 text-[10px] font-medium"
+                >
+                  仍要识别
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setNotice(null)}
+                aria-label="关闭"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         )}
 

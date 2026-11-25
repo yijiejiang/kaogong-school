@@ -185,12 +185,13 @@ async def delete_question(
 async def extract_from_material(
     material_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    force: bool = False,
 ) -> dict:
     material = await db.get(Material, material_id)
     if material is None:
         raise HTTPException(status_code=404, detail="资料不存在。")
     llm = await load_llm_settings(db)
-    result = await extract_questions(db, material_id, llm)
+    result = await extract_questions(db, material_id, llm, force=force)
     return {"status": "success", **result}
 
 

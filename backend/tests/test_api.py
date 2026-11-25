@@ -1758,3 +1758,29 @@ def test_stem_fingerprint_ignores_numbering_and_punctuation() -> None:
     right = "某知名跨国公司的总部员工中 所有懂英语的员工都不精通印尼语"
     assert _stem_fingerprint(left) == _stem_fingerprint(right)
     assert _stem_fingerprint(left) != _stem_fingerprint("另一道完全不同的题目题干内容")
+
+
+def test_answer_key_detector_ignores_graded_textbook() -> None:
+    from app.services.material_classifier import detect_answer_key
+
+    # 题本偶尔带一小节解析，但主体是题干和选项，不该被判成解析篇
+    textbook = "\n".join(
+        f"{i}. 题干第{i}题，选项如下：\nA. 甲\nB. 乙\nC. 丙\nD. 丁\n【解析】这里是简要说明。"
+        for i in range(1, 40)
+    )
+    verdict = detect_answer_key([textbook])
+    assert verdict.is_answer_key is False, verdict.hits
+
+
+def test_answer_key_detector_flags_explanation_book() -> None:
+    from app.services.material_classifier import detect_answer_key
+
+    book = "\n".join(
+        f"{i}. 题干第{i}题：\nA. 甲\nB. 乙\nC. 丙\nD. 丁\n"
+        f"【参考答案】A\n【题型分类】削弱型\n【实战解析】A 选项，说明理由。综上，答案为 A 选项。"
+        f"\n花生批注：注意这里的坑。"
+        for i in range(1, 25)
+    )
+    verdict = detect_answer_key([book])
+    assert verdict.is_answer_key is True
+    assert "参考答案标记" in verdict.reason

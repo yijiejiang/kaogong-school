@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.db.models import Chunk, Question, Skill
 from app.schemas.settings import LlmSettings
 from app.services.llm import normalize_model, role_model_config
+from app.services.material_classifier import detect_answer_key
 
 logger = logging.getLogger(__name__)
 
@@ -623,14 +624,7 @@ def _is_answer_key(pages: list[str]) -> bool:
 
     它和题本篇是同一批题，抽出来只会让题库翻倍，而且答案正确性无法保证。
     """
-    sample = "\n".join(pages)[:20000]
-    if not sample:
-        return False
-    answers = len(re.findall(r"【参考答案】", sample))
-    explains = len(re.findall(r"【(?:实战)?解析】", sample))
-    annotations = len(re.findall(r"花生批注", sample))
-    # 每 2 万字里出现十几次答案标记，基本可以判定为解析资料
-    return answers >= 8 or explains >= 8 or annotations >= 8
+    return detect_answer_key(pages).is_answer_key
 
 
 async def extract_questions(
@@ -638,11 +632,15 @@ async def extract_questions(
     material_id: str,
     llm: LlmSettings,
     progress: ProgressCallback | None = None,
+    force: bool = False,
 ) -> dict:
     """Scan a material's chunks, extract questions and tag them.
 
     Long materials are processed in LLM-sized batches; one failed batch falls
     back to rule extraction instead of losing the rest.
+
+    Args:
+        force: 判定为解析篇时是否仍要抽取（页面上「仍要识别」用）。
     """
     await db.execute(delete(Question).where(Question.material_id == material_id))
 
@@ -660,13 +658,17 @@ async def extract_questions(
         await db.commit()
         return {"questions": 0, "model": "", "warning": ""}
 
-    if _is_answer_key([chunk.content for chunk in chunks[:60]]):
+    verdict = detect_answer_key([chunk.content for chunk in chunks[:60]])
+    if verdict.is_answer_key and not force:
         await db.commit()
         return {
             "questions": 0,
             "model": "",
-            "warning": "这份资料看起来是解析篇（含【参考答案】与解析），未导入题库。"
-            "题本请上传题目本身。",
+            "skipped": "answer_key",
+            "warning": (
+                f"这份资料看起来是解析篇（{verdict.reason}），没有导入题库，"
+                "以免和题本篇重复。确实是题目的话，可以点「仍要识别」强制导入。"
+            ),
         }
 
     pairs = split_material(
