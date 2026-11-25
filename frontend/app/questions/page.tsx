@@ -220,8 +220,33 @@ export default function QuestionBankPage() {
             />
           </div>
           <span className="text-[11px] text-[#8a8475]">
-            共 {tagData?.total ?? 0} 道题，当前显示 {questions.length} 道
+            {tag || module || search ? (
+              <>
+                筛选出 <strong className="text-ink">{questions.length}</strong> 道
+                {questions.length >= 300 ? "（上限 300，可再收窄条件）" : ""}
+                {module ? ` · 模块「${module}」` : ""}
+                {tag ? ` · 标签「${tag}」` : ""}
+              </>
+            ) : (
+              <>
+                共 <strong className="text-ink">{tagData?.total ?? 0}</strong> 道题
+                {questions.length >= 300 ? "，当前显示前 300 道" : ""}
+              </>
+            )}
           </span>
+          {(tag || module || search) && (
+            <button
+              type="button"
+              onClick={() => {
+                setTag("");
+                setModule("");
+                setSearch("");
+              }}
+              className="rounded-md border border-[#d8d0c4] bg-white px-2 py-1 text-[10px] text-[#6b6459] hover:border-ink hover:text-ink"
+            >
+              清除筛选
+            </button>
+          )}
         </div>
 
         {visibleTags.length > 0 && (

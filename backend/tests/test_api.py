@@ -1731,3 +1731,30 @@ def test_fill_missing_recovers_blocks_llm_skipped() -> None:
     items = [{"chunk_index": 0, "stem": "已识别", "options": [{"key": "A", "text": "甲"}]}]
     out = _fill_missing(blocks, items)
     assert [item["chunk_index"] for item in out] == [0, 2]
+
+
+def test_answer_key_material_is_not_extracted() -> None:
+    from app.services.question_extraction import _is_answer_key
+
+    textbook = [
+        (
+            "1. 某牧场有牛若干，草量匀速生长，可供 10 头牛吃 20 天。\n"
+            "A. 5 天\nB. 10 天\nC. 15 天\nD. 20 天\n"
+            "2. 某项工程甲单独做 12 天完成。\nA. 1\nB. 2\nC. 3\nD. 4"
+        )
+    ]
+    assert not _is_answer_key(textbook)
+
+    answer_key = [
+        "1. 某牧场有牛若干。\nA. 5\nB. 10\nC. 15\nD. 20\n【参考答案】A\n【题型分类】数量关系\n【实战解析】……"
+    ] * 8
+    assert _is_answer_key(answer_key)
+
+
+def test_stem_fingerprint_ignores_numbering_and_punctuation() -> None:
+    from app.services.question_extraction import _stem_fingerprint
+
+    left = "12. 某知名跨国公司的总部员工中，所有懂英语的员工都不精通印尼语。"
+    right = "某知名跨国公司的总部员工中 所有懂英语的员工都不精通印尼语"
+    assert _stem_fingerprint(left) == _stem_fingerprint(right)
+    assert _stem_fingerprint(left) != _stem_fingerprint("另一道完全不同的题目题干内容")

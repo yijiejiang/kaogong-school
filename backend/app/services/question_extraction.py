@@ -608,6 +608,31 @@ def _question_id(material_id: str, chunk_id: str, stem: str) -> str:
     return f"q-{digest}"
 
 
+def _stem_fingerprint(stem: str) -> str:
+    """题干指纹：去掉题号、空白和标点后取前 80 字，用于跨资料去重。"""
+    import hashlib
+
+    cleaned = re.sub(r"^[\s\d.．、]+", "", stem)
+    cleaned = re.sub(r"[\s　]+|[“”\"'，。、；：？！,.;:?!【】（）()]", "", cleaned)
+    digest = hashlib.sha1(cleaned[:80].encode()).hexdigest()
+    return digest[:16]
+
+
+def _is_answer_key(pages: list[str]) -> bool:
+    """解析篇这类「答案 + 解析」资料不该抽题。
+
+    它和题本篇是同一批题，抽出来只会让题库翻倍，而且答案正确性无法保证。
+    """
+    sample = "\n".join(pages)[:20000]
+    if not sample:
+        return False
+    answers = len(re.findall(r"【参考答案】", sample))
+    explains = len(re.findall(r"【(?:实战)?解析】", sample))
+    annotations = len(re.findall(r"花生批注", sample))
+    # 每 2 万字里出现十几次答案标记，基本可以判定为解析资料
+    return answers >= 8 or explains >= 8 or annotations >= 8
+
+
 async def extract_questions(
     db: AsyncSession,
     material_id: str,
@@ -634,6 +659,15 @@ async def extract_questions(
     if not chunks:
         await db.commit()
         return {"questions": 0, "model": "", "warning": ""}
+
+    if _is_answer_key([chunk.content for chunk in chunks[:60]]):
+        await db.commit()
+        return {
+            "questions": 0,
+            "model": "",
+            "warning": "这份资料看起来是解析篇（含【参考答案】与解析），未导入题库。"
+            "题本请上传题目本身。",
+        }
 
     pairs = split_material(
         [(chunk.id, chunk.content) for chunk in chunks],
@@ -703,10 +737,23 @@ async def extract_questions(
 
     created = 0
     seen: set[str] = set()
+    # 同一道题可能来自题库里的另一份资料（例如题本与解析篇），题干指纹去重。
+    existing = {
+        _stem_fingerprint(stem)
+        for stem in (
+            await db.execute(
+                select(Question.stem).where(Question.material_id != material_id)
+            )
+        ).scalars()
+    }
     for item in items:
         chunk: Chunk | None = item.get("chunk")
         if chunk is None:
             continue
+        fingerprint = _stem_fingerprint(item["stem"])
+        if fingerprint in existing:
+            continue
+        existing.add(fingerprint)
         qid = _question_id(material_id, chunk.id, item["stem"])
         if qid in seen:
             continue
