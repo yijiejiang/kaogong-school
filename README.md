@@ -115,6 +115,27 @@ make demo
 BACKEND_PORT=8010 FRONTEND_PORT=3010 make start
 ```
 
+### 界面没反应了
+
+先看后端是「忙」还是「卡死」：
+
+```bash
+make doctor
+```
+
+- 有响应 → 后端活着，可能只是在大批量写库，等一会儿就好
+- 没响应 → 进程卡死，一条命令重启后端（前端不用动）：
+
+```bash
+make restart
+```
+
+`./doctor.sh restart` 会先探测健康状态，健康时不会误重启；确实要强制重启时用：
+
+```bash
+./doctor.sh restart --force
+```
+
 ### 拿一条视频试试
 
 打开「资料 → 导入网页」，粘一个 B 站或 YouTube 课程链接，等入库完成，展开就能看到逐页笔记和关键帧。

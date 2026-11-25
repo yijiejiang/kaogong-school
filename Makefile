@@ -1,9 +1,15 @@
-.PHONY: start demo install infra backend backend-demo backend-lan frontend test lint install-service uninstall-service service-logs ios ios-build tailscale-serve tailscale-status tailscale-stop
+.PHONY: start doctor restart demo install infra backend backend-demo backend-lan frontend test lint install-service uninstall-service service-logs ios ios-build tailscale-serve tailscale-status tailscale-stop
 
 TAILSCALE_BIN ?= tailscale
 
 start:
 	./start.sh
+
+doctor:
+	./doctor.sh
+
+restart:
+	./doctor.sh restart --force
 
 demo:
 	MODE=demo ./start.sh
