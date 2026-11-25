@@ -65,18 +65,28 @@ struct RootView: View {
     @EnvironmentObject private var store: AppStore
     @State private var connectMessage: String?
 
+    @State private var selectedTab = 0
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             ChatView()
                 .tabItem { Label("对话", systemImage: "message") }
+                .tag(0)
             DashboardView()
                 .tabItem { Label("学情", systemImage: "chart.bar") }
+                .tag(1)
             ExamsView()
                 .tabItem { Label("考试", systemImage: "doc.text") }
+                .tag(2)
             KnowledgeHubView()
                 .tabItem { Label("知识", systemImage: "books.vertical") }
+                .tag(3)
             SettingsView()
                 .tabItem { Label("设置", systemImage: "gearshape") }
+                .tag(4)
+        }
+        .onChange(of: store.requestedTab) { _, newValue in
+            selectedTab = newValue
         }
         .tint(Theme.accent)
         .background(Theme.background)

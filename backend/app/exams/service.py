@@ -507,7 +507,32 @@ async def list_attempts(
     ]
 
 
-async def get_latest_attempt_report(db: AsyncSession, user_id: str) -> dict:
+async def get_latest_attempt_report(
+    db: AsyncSession, user_id: str, attempt_id: str = ""
+) -> dict:
+    """读取已批改试卷的报告。
+
+    学生从报告页跳过来时带着 attempt_id，直接读那一份；否则取最近一次。
+    """
+    if attempt_id:
+        row = (
+            await db.execute(
+                select(Attempt)
+                .where(
+                    Attempt.id == attempt_id,
+                    Attempt.user_id == user_id,
+                    Attempt.status == "graded",
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if row is not None:
+            return {
+                "status": "success",
+                "attempt_id": row.id,
+                "report": json.loads(row.report_json or "{}"),
+            }
+
     row = (
         await db.execute(
             select(Attempt, Exam)
@@ -520,4 +545,8 @@ async def get_latest_attempt_report(db: AsyncSession, user_id: str) -> dict:
     if row is None:
         return {"status": "empty", "report": None}
     attempt, _exam = row
-    return {"status": "success", "report": json.loads(attempt.report_json or "{}")}
+    return {
+        "status": "success",
+        "attempt_id": attempt.id,
+        "report": json.loads(attempt.report_json or "{}"),
+    }

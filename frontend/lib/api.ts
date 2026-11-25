@@ -614,7 +614,12 @@ export type StreamEvent = {
 };
 
 export async function streamChat(
-  payload: { message: string; session_id?: string | null; user_id?: string },
+  payload: {
+    message: string;
+    session_id?: string | null;
+    user_id?: string;
+    attempt_id?: string | null;
+  },
   onEvent: (event: StreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {

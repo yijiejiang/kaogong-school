@@ -1851,3 +1851,49 @@ def test_manual_knowledge_unit_without_material() -> None:
 
         empty = client.post("/api/knowledge/units", json={"title": "   "})
         assert empty.status_code == 400
+
+
+def test_report_tool_reads_specific_attempt() -> None:
+    """从报告页跳转时带着 attempt_id，改卷老师要读那一份而不是最近一份。"""
+    import asyncio
+
+    from app.db.session import SessionLocal
+    from app.exams.service import get_latest_attempt_report
+
+    async def run() -> None:
+        async with SessionLocal() as db:
+            missing = await get_latest_attempt_report(db, "pytest-user", "no-such-id")
+            assert missing["status"] in ("empty", "success")
+
+    asyncio.run(run())
+
+
+def test_tool_prefers_active_attempt_from_state() -> None:
+    import asyncio
+
+    from app.tools.exam import get_latest_attempt_report
+
+    class Ctx:
+        def __init__(self, state):
+            self.state = state
+
+    captured = {}
+
+    async def fake_report(db, user_id, attempt_id=""):
+        captured["attempt_id"] = attempt_id
+        return {"status": "empty", "report": None}
+
+    import app.tools.exam as exam_tools
+
+    original = exam_tools.latest_report
+    exam_tools.latest_report = fake_report
+    try:
+        ctx = Ctx({"user_id": "u1", "active_attempt_id": "att-123"})
+        asyncio.run(get_latest_attempt_report(ctx))
+        assert captured["attempt_id"] == "att-123"
+
+        ctx.state.pop("active_attempt_id")
+        asyncio.run(get_latest_attempt_report(ctx))
+        assert captured["attempt_id"] == ""
+    finally:
+        exam_tools.latest_report = original

@@ -730,6 +730,7 @@ private struct ExamPlayerView: View {
 struct ReportView: View {
     let attemptId: String
 
+    @EnvironmentObject private var store: AppStore
     @State private var report: AttemptReport?
     @State private var loading = true
     @State private var error: String?
@@ -752,6 +753,7 @@ struct ReportView: View {
                             index, feedback in
                             feedbackCard(feedback, index: index)
                         }
+                        askGraderCard(report)
                     }
                     .padding()
                 }
@@ -779,6 +781,37 @@ struct ReportView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func askGraderCard(_ report: AttemptReport) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("想问改卷老师？")
+                .font(.subheadline.bold())
+            Text("跳到对话追问这套卷子，它会带着这次的成绩和错题一起看。")
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
+            Button {
+                store.askAboutAttempt(
+                    "这套卷子我哪块最薄弱？",
+                    attemptId: report.attemptId
+                )
+            } label: {
+                HStack {
+                    Text("去对话问改卷老师")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                }
+                .padding(10)
+                .background(Theme.accentSoft)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(Theme.paper)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private func summaryCard(_ report: AttemptReport) -> some View {

@@ -39,7 +39,20 @@ def _today_note() -> str:
     )
 
 
-def create_root_agent(llm: LlmSettings) -> Agent:
+def _with_active_attempt(attempt_id: str):
+    """把本轮要看的答卷写进 session state，供改卷老师的工具读取。
+
+    学生从报告页跳进对话时带着 attempt_id；用回调写入而不是直接改 session，
+    这样不依赖 ADK 的会话服务实现细节。
+    """
+
+    async def before_agent(callback_context) -> None:
+        callback_context.state["active_attempt_id"] = attempt_id
+
+    return before_agent
+
+
+def create_root_agent(llm: LlmSettings, attempt_id: str = "") -> Agent:
     output_discipline = (
         "\n\n输出纪律：只输出给学生看的最终回答，不要输出思考过程、草稿、计划、"
         "英文分析、工具调用说明，也不要复述系统规则。直接给结论和可执行建议。"
@@ -246,6 +259,9 @@ def create_root_agent(llm: LlmSettings) -> Agent:
         name="counselor",
         model=counselor_model,
         description="辅导员：学生唯一的总入口，负责答疑、分诊、陪伴。",
+        before_agent_callback=(
+            _with_active_attempt(attempt_id) if attempt_id else None
+        ),
         instruction="""你是「辅导员」，学生唯一的总入口，像一位靠谱的班主任。
 
 你的风格：温和、直接、不绕弯子。你可以直接回答学习方法、考试策略、心态调整、时间安排等问题。

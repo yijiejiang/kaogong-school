@@ -8,7 +8,8 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatHeader } from "@/components/ChatHeader";
 import { Composer } from "@/components/Composer";
@@ -51,7 +52,17 @@ const QUICK_PROMPTS = [
 ];
 
 export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatWorkspace />
+    </Suspense>
+  );
+}
+
+function ChatWorkspace() {
   const userId = useUserId();
+  const searchParams = useSearchParams();
+  const attemptId = searchParams.get("attempt") || "";
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -167,7 +178,12 @@ export default function ChatPage() {
 
       try {
         await streamChat(
-          { message: text, session_id: activeSessionId, user_id: userId },
+          {
+            message: text,
+            session_id: activeSessionId,
+            user_id: userId,
+            ...(attemptId ? { attempt_id: attemptId } : {}),
+          },
           (event: StreamEvent) => {
             switch (event.type) {
               case "session": {
@@ -271,6 +287,7 @@ export default function ChatPage() {
     },
     [
       activeSessionId,
+      attemptId,
       ensureAssistant,
       flushPendingUi,
       input,
@@ -279,6 +296,15 @@ export default function ChatPage() {
       streaming,
     ],
   );
+
+  // 从报告页跳过来时带着问题，进来就直接问，不用学生再打一遍。
+  const askedRef = useRef("");
+  useEffect(() => {
+    const ask = searchParams.get("ask") || "";
+    if (!ask || askedRef.current === ask + attemptId) return;
+    askedRef.current = ask + attemptId;
+    void send(ask);
+  }, [attemptId, searchParams, send]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();

@@ -60,6 +60,11 @@ struct ChatView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 header
+                    .onChange(of: store.pendingQuestion) { _, question in
+                        guard let question, !question.isEmpty else { return }
+                        store.pendingQuestion = nil
+                        store.send(question, attemptId: store.activeAttemptId)
+                    }
                 if let error = store.errorMessage {
                     Text(error)
                         .font(.caption)

@@ -289,7 +289,7 @@ export default function ReportPage() {
           想让改卷老师再讲一遍？回到对话，直接问“这道题为什么错”或“再给我两道类似的”。
           <div className="mt-3">
             <Link
-              href="/"
+              href={`/?attempt=${encodeURIComponent(params.attemptId)}&ask=${encodeURIComponent("这套卷子我哪块最薄弱？")}`}
               className="inline-flex rounded-xl bg-ink px-4 py-2 text-xs font-medium text-white"
             >
               回对话问改卷老师

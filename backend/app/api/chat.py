@@ -35,6 +35,8 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
     session_id: str | None = None
     user_id: str = "local-user"
+    # 从报告页跳转时带上，让改卷老师知道学生在问哪一份卷子
+    attempt_id: str | None = None
 
 
 def _sse(payload: dict) -> str:
@@ -124,17 +126,24 @@ def _friendly_error(exc: Exception) -> str:
 
 
 async def _ensure_session(
-    session_service, user_id: str, session_id: str, message: str
+    session_service,
+    user_id: str,
+    session_id: str,
+    message: str,
+    attempt_id: str = "",
 ) -> None:
     session = await session_service.get_session(
         app_name=APP_NAME, user_id=user_id, session_id=session_id
     )
     if session is None:
+        state = {"title": message[:40], "user_id": user_id}
+        if attempt_id:
+            state["active_attempt_id"] = attempt_id
         await session_service.create_session(
             app_name=APP_NAME,
             user_id=user_id,
             session_id=session_id,
-            state={"title": message[:40], "user_id": user_id},
+            state=state,
         )
 
 
@@ -294,8 +303,10 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
     session_service = get_session_service()
 
     try:
-        await _ensure_session(session_service, user_id, session_id, req.message)
-        root_agent = create_root_agent(llm)
+        await _ensure_session(
+            session_service, user_id, session_id, req.message, req.attempt_id or ""
+        )
+        root_agent = create_root_agent(llm, attempt_id=req.attempt_id or "")
         runner = RootFirstRunner(
             agent=root_agent, app_name=APP_NAME, session_service=session_service
         )

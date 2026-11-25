@@ -10,6 +10,11 @@ final class AppStore: ObservableObject {
     @Published var activeAuthor = "counselor"
     @Published var isStreaming = false
     @Published var errorMessage: String?
+    /// 从报告页跳到对话时携带，让改卷老师知道学生问的是哪一份卷子
+    @Published var activeAttemptId: String?
+    /// 跨 tab 跳转：报告页要求打开对话
+    @Published var requestedTab = 0
+    @Published var pendingQuestion: String?
 
     private var streamTask: Task<Void, Never>?
     private var pendingUI: [String: UIComponent] = [:]
@@ -66,8 +71,22 @@ final class AppStore: ObservableObject {
     }
 
     func send(_ text: String) {
+        send(text, attemptId: nil)
+    }
+
+    /// 报告页调用：切到对话、带上 attempt、并自动提问。
+    func askAboutAttempt(_ text: String, attemptId: String) {
+        activeAttemptId = attemptId
+        pendingQuestion = text
+        requestedTab = 0
+    }
+
+    func send(_ text: String, attemptId: String?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
+        if let attemptId, !attemptId.isEmpty {
+            activeAttemptId = attemptId
+        }
         errorMessage = nil
         pendingUI = [:]
         messages.append(ChatMessage(role: .user, author: "user", content: trimmed))
@@ -78,7 +97,8 @@ final class AppStore: ObservableObject {
             do {
                 let stream = await APIClient.shared.streamChat(
                     message: trimmed,
-                    sessionId: activeSessionId
+                    sessionId: activeSessionId,
+                    attemptId: attemptId ?? activeAttemptId
                 )
                 for try await event in stream {
                     handle(event)

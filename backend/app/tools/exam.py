@@ -100,11 +100,12 @@ async def generate_exam(
 
 
 async def get_latest_attempt_report(tool_context: ToolContext) -> dict:
-    """Return the latest graded attempt report for this student.
+    """Return the graded attempt report the student is looking at.
 
-    Use it before explaining mistakes or generating 举一反三. If there is no
-    graded attempt, return an empty status instead of inventing scores.
+    学生从报告页进入对话时，会话里带了 attempt_id，优先读那一份；
+    否则取最近一次已批改试卷。没有记录时返回 empty，不要编造分数。
     """
     user_id = tool_context.state.get("user_id", "local-user")
+    attempt_id = tool_context.state.get("active_attempt_id", "")
     async with SessionLocal() as db:
-        return await latest_report(db, user_id)
+        return await latest_report(db, user_id, attempt_id)
