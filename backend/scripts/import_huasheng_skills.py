@@ -22,10 +22,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import delete, select  # noqa: E402
+from sqlalchemy import delete, select
 
-from app.db.session import SessionLocal  # noqa: E402
-from app.db.models import Skill  # noqa: E402
+from app.db.models import Skill
+from app.db.session import SessionLocal
 
 # 文件 → (科目, 模块, 知识点 id, 知识点名)
 FILE_META: dict[str, tuple[str, str, str, str]] = {
