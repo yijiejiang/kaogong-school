@@ -773,3 +773,17 @@ export type ConnectInfo = {
   ips: string[];
   payload: string;
 };
+
+export type ExtractJob = {
+  id: string;
+  status: string;
+  progress: number;
+  message: string;
+  error: string;
+  result: {
+    questions?: number;
+    model?: string;
+    warning?: string;
+    skipped?: string;
+  };
+};

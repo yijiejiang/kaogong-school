@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from collections.abc import Callable
 
 import litellm
@@ -13,7 +14,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import Chunk, Question, Skill
+from app.db.models import Chunk, Job, Question, Skill
+from app.db.session import SessionLocal
 from app.schemas.settings import LlmSettings
 from app.services.llm import normalize_model, role_model_config
 from app.services.material_classifier import detect_answer_key
@@ -24,6 +26,7 @@ MAX_SCAN_CHUNKS = 2000        # 单份资料最多扫描的分块数
 MAX_QUESTIONS_PER_MATERIAL = 800  # 单份资料最多抽取的题目数
 LLM_BATCH_SIZE = 6            # 每次 LLM 调用处理的题目块数（长题干时输出量大）
 LLM_CONCURRENCY = 4           # 并发批次数；过高容易触发供应商限流
+COMMIT_EVERY = 50             # 每写多少道题提交一次，避免超长写事务
 MAX_TAGS = 6
 LLM_MAX_TOKENS = 16000
 
@@ -783,6 +786,85 @@ async def extract_questions(
             )
         )
         created += 1
+        # 分批提交：一次写完全部题目会变成超长写事务，占着写锁把读请求拖死，
+        # 最后一批还好几百行，中途出错则整批回滚、白跑一遍 LLM。
+        if created % COMMIT_EVERY == 0:
+            await db.commit()
 
     await db.commit()
     return {"questions": created, "model": model_used, "warning": warning}
+
+
+_tasks: set[asyncio.Task] = set()
+
+
+async def start_question_extraction(
+    db: AsyncSession,
+    material_id: str,
+    force: bool = False,
+) -> Job:
+    """建立一个抽题任务并在后台执行，接口可以立即返回。"""
+    job = Job(
+        id=uuid.uuid4().hex,
+        type="question_extract",
+        status="pending",
+        message="排队中",
+        payload_json=json.dumps(
+            {"material_id": material_id, "force": force}, ensure_ascii=False
+        ),
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    task = asyncio.create_task(run_question_extraction_job(job.id))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return job
+
+
+async def run_question_extraction_job(job_id: str) -> None:
+    async with SessionLocal() as db:
+        job = await db.get(Job, job_id)
+        if job is None:
+            return
+        try:
+            payload = json.loads(job.payload_json or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        material_id = str(payload.get("material_id") or "")
+        force = bool(payload.get("force"))
+
+        job.status = "processing"
+        job.progress = 0.0
+        job.message = "正在识别题目"
+        await db.commit()
+
+        async def progress(done: int, total: int) -> None:
+            job.progress = min(0.99, done / max(total, 1))
+            job.message = f"识别题目 {done}/{total} 批"
+            await db.commit()
+
+        try:
+            from app.services.settings_service import load_llm_settings
+
+            llm = await load_llm_settings(db)
+            result = await extract_questions(
+                db, material_id, llm, progress=progress, force=force
+            )
+            skipped = result.get("skipped")
+            job.status = "done"
+            job.progress = 1.0
+            job.message = (
+                "这份资料是解析篇，已跳过"
+                if skipped
+                else f"识别完成，新增 {result.get('questions', 0)} 道题"
+            )
+            job.result_json = json.dumps(result, ensure_ascii=False)
+            await db.commit()
+        except Exception as exc:
+            logger.exception("question extraction job failed")
+            job.status = "failed"
+            job.error = str(exc)[:500]
+            job.message = "识别失败"
+            await db.commit()

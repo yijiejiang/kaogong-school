@@ -9,10 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Material, Question
+from app.db.models import Job, Material, Question
 from app.db.session import get_db
-from app.services.question_extraction import extract_questions
-from app.services.settings_service import load_llm_settings
+from app.services.question_extraction import start_question_extraction
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])
 
@@ -187,12 +186,39 @@ async def extract_from_material(
     db: Annotated[AsyncSession, Depends(get_db)],
     force: bool = False,
 ) -> dict:
+    """把题目抽取排成后台任务并立即返回。
+
+    一份大资料要抽几百道题、跑几分钟 LLM，做成同步请求的话浏览器会先超时，
+    界面上看起来就是「点了没反应」。
+    """
     material = await db.get(Material, material_id)
     if material is None:
         raise HTTPException(status_code=404, detail="资料不存在。")
-    llm = await load_llm_settings(db)
-    result = await extract_questions(db, material_id, llm, force=force)
-    return {"status": "success", **result}
+    job = await start_question_extraction(db, material_id, force=force)
+    return {"status": "accepted", "job_id": job.id, "message": job.message}
+
+
+@router.get("/extract/jobs/{job_id}")
+async def extract_job_status(
+    job_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    job = await db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在。")
+    result = {}
+    try:
+        result = json.loads(job.result_json or "{}")
+    except json.JSONDecodeError:
+        result = {}
+    return {
+        "id": job.id,
+        "status": job.status,
+        "progress": job.progress,
+        "message": job.message,
+        "error": job.error,
+        "result": result,
+    }
 
 
 @router.get("/stats")

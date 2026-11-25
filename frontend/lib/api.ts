@@ -8,6 +8,7 @@ import type {
   AttemptSummary,
   BankQuestion,
   BankTagsResponse,
+  ExtractJob,
   BillingOverview,
   ChatMessage,
   ConnectInfo,
@@ -396,18 +397,16 @@ export async function deleteQuestion(id: string): Promise<{ ok: boolean }> {
 export async function extractQuestions(
   materialId: string,
   force = false,
-): Promise<{
-  status: string;
-  questions: number;
-  model: string;
-  warning: string;
-  skipped?: string;
-}> {
+): Promise<{ status: string; job_id: string; message: string }> {
   const query = force ? "?force=true" : "";
   return request(
     `/api/questions/extract/${encodeURIComponent(materialId)}${query}`,
     { method: "POST" },
   );
+}
+
+export async function fetchExtractJob(jobId: string): Promise<ExtractJob> {
+  return request(`/api/questions/extract/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export async function fetchExam(id: string): Promise<ExamTake> {

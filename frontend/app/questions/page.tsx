@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   deleteQuestion,
   extractQuestions,
+  fetchExtractJob,
   fetchMaterials,
   fetchQuestions,
   fetchQuestionTags,
@@ -26,6 +27,7 @@ import {
 import type {
   BankQuestion,
   BankTagsResponse,
+  ExtractJob,
   Material,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -38,6 +40,22 @@ const DIFFICULTY_LABEL: Record<number, string> = {
   5: "很难",
 };
 
+const POLL_INTERVAL_MS = 1500;
+
+async function pollExtractJob(
+  jobId: string,
+  onUpdate: (job: ExtractJob) => void,
+): Promise<ExtractJob> {
+  for (;;) {
+    const job = await fetchExtractJob(jobId);
+    onUpdate(job);
+    if (job.status === "done" || job.status === "failed") {
+      return job;
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+}
+
 export default function QuestionBankPage() {
   const [questions, setQuestions] = useState<BankQuestion[]>([]);
   const [tagData, setTagData] = useState<BankTagsResponse | null>(null);
@@ -48,7 +66,7 @@ export default function QuestionBankPage() {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState<{
-    kind: "success" | "error";
+    kind: "success" | "error" | "busy";
     text: string;
     retry?: () => void;
   } | null>(null);
@@ -87,19 +105,37 @@ export default function QuestionBankPage() {
 
   const runExtract = async (materialId: string, force = false) => {
     setBusy(materialId);
+    setNotice({
+      kind: "busy",
+      text: "正在识别题目…",
+    });
     try {
-      const result = await extractQuestions(materialId, force);
-      if (result.skipped === "answer_key") {
+      const started = await extractQuestions(materialId, force);
+      const finished = await pollExtractJob(started.job_id, (job) => {
+        setNotice({
+          kind: "busy",
+          text: `${job.message}${job.progress > 0 ? `（${Math.round(job.progress * 100)}%）` : ""}`,
+        });
+      });
+
+      if (finished.status === "failed") {
         setNotice({
           kind: "error",
-          text: result.warning,
+          text: finished.error || "识别失败",
+        });
+      } else if (finished.result?.skipped === "answer_key") {
+        setNotice({
+          kind: "error",
+          text: finished.result.warning || "这份资料是解析篇",
           retry: () => void runExtract(materialId, true),
         });
       } else {
+        const count = finished.result?.questions ?? 0;
+        const warning = finished.result?.warning;
         setNotice({
           kind: "success",
-          text: `识别完成：新增 ${result.questions} 道题（${result.model || "规则"}）${
-            result.warning ? `。${result.warning}` : ""
+          text: `识别完成：新增 ${count} 道题（${finished.result?.model || "规则"}）${
+            warning ? `。${warning}` : ""
           }`,
         });
       }
@@ -206,13 +242,19 @@ export default function QuestionBankPage() {
           <div
             className={cn(
               "mt-4 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-xs leading-5",
-              notice.kind === "success"
-                ? "border-[#c8ded4] bg-[#eef7f2] text-[#2f5d50]"
-                : "border-[#ecc9c2] bg-[#fbe9e7] text-[#a33a2a]",
+              notice.kind === "success" &&
+                "border-[#c8ded4] bg-[#eef7f2] text-[#2f5d50]",
+              notice.kind === "error" &&
+                "border-[#ecc9c2] bg-[#fbe9e7] text-[#a33a2a]",
+              notice.kind === "busy" &&
+                "border-[#d8d0c4] bg-[#faf7f1] text-[#6b6459]",
             )}
           >
             <span>{notice.text}</span>
             <div className="flex shrink-0 items-center gap-2">
+              {notice.kind === "busy" && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
               {notice.retry && (
                 <button
                   type="button"
@@ -226,13 +268,15 @@ export default function QuestionBankPage() {
                   仍要识别
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setNotice(null)}
-                aria-label="关闭"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              {notice.kind !== "busy" && (
+                <button
+                  type="button"
+                  onClick={() => setNotice(null)}
+                  aria-label="关闭"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
         )}
