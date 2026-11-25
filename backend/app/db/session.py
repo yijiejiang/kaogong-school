@@ -117,10 +117,71 @@ async def _ensure_columns(conn) -> None:
                 )
 
 
+async def _relax_knowledge_unit_source(conn) -> None:
+    """知识条目允许没有来源资料（手动新增）。
+
+    SQLite 不能直接去掉列的 NOT NULL，只能重建表再把数据搬回去。
+    """
+    result = await conn.execute(text("PRAGMA table_info(knowledge_units)"))
+    info = {row[1]: row for row in result}
+    if not info:
+        return
+    material_notnull = info.get("material_id", (None,) * 4)[3]
+    chunk_notnull = info.get("chunk_id", (None,) * 4)[3]
+    if not material_notnull and not chunk_notnull:
+        return
+
+    await conn.execute(
+        text(
+            "CREATE TABLE knowledge_units_new ("
+            " id VARCHAR(36) NOT NULL PRIMARY KEY,"
+            " material_id VARCHAR(36),"
+            " chunk_id VARCHAR(36),"
+            " chunk_type VARCHAR(16), title VARCHAR(255), summary TEXT,"
+            " definition TEXT, conditions_json TEXT, steps_json TEXT,"
+            " pitfalls_json TEXT, examples_json TEXT, exam_pattern TEXT,"
+            " signals_json TEXT, variants_json TEXT, connections_json TEXT,"
+            " question_design_json TEXT, knowledge_point_id VARCHAR(64),"
+            " knowledge_point_name VARCHAR(128), skill_name VARCHAR(128),"
+            " skill_id VARCHAR(64), proposed_knowledge_point VARCHAR(128),"
+            " proposed_parent_id VARCHAR(64), proposed_reason TEXT,"
+            " confidence FLOAT, evidence_json TEXT, extraction_model VARCHAR(128),"
+            " status VARCHAR(16), created_at DATETIME, updated_at DATETIME,"
+            " FOREIGN KEY(material_id) REFERENCES materials(id) ON DELETE CASCADE,"
+            " FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE)"
+        )
+    )
+    columns = ", ".join(info.keys())
+    await conn.execute(
+        text(
+            f"INSERT INTO knowledge_units_new ({columns}) "
+            f"SELECT {columns} FROM knowledge_units"
+        )
+    )
+    await conn.execute(text("DROP TABLE knowledge_units"))
+    await conn.execute(
+        text("ALTER TABLE knowledge_units_new RENAME TO knowledge_units")
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_knowledge_units_material_id "
+            "ON knowledge_units (material_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_knowledge_units_chunk_id "
+            "ON knowledge_units (chunk_id)"
+        )
+    )
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_columns(conn)
+        if engine.dialect.name == "sqlite":
+            await _relax_knowledge_unit_source(conn)
         await conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_questions_material_id "

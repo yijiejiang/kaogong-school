@@ -207,7 +207,7 @@ class MockLlm(BaseLlm):
             yield self._function_call("list_materials", {})
             return
 
-        if agent == "knowledge":
+        if agent == "tutor":
             if tool_response:
                 name, data = tool_response
                 if name in {"search_knowledge", "search_materials"}:
@@ -300,7 +300,7 @@ class MockLlm(BaseLlm):
             )
         ) and has_transfer:
             yield self._function_call(
-                "transfer_to_agent", {"agent_name": "knowledge"}
+                "transfer_to_agent", {"agent_name": "tutor"}
             )
             return
 

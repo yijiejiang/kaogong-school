@@ -410,6 +410,28 @@ actor APIClient {
         return try await get("/api/knowledge/units", query: query)
     }
 
+    func createKnowledgeUnit(
+        title: String,
+        summary: String,
+        steps: [String],
+        pitfalls: [String],
+        variants: [String],
+        knowledgePointName: String
+    ) async throws -> KnowledgeUnitItem {
+        try await send(
+            "/api/knowledge/units",
+            method: "POST",
+            json: [
+                "title": title,
+                "summary": summary,
+                "steps": steps,
+                "pitfalls": pitfalls,
+                "variants": variants,
+                "knowledge_point_name": knowledgePointName,
+            ]
+        )
+    }
+
     func updateKnowledgeUnitStatus(id: String, status: String) async throws -> KnowledgeUnitItem {
         try await send(
             "/api/knowledge/units/\(id)",

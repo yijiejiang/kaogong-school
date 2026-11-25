@@ -138,8 +138,8 @@ class KnowledgeCardOut(BaseModel):
 
 class KnowledgeUnitOut(BaseModel):
     id: str
-    material_id: str
-    chunk_id: str
+    material_id: str | None = None
+    chunk_id: str | None = None
     chunk_type: str
     title: str
     summary: str = ""
@@ -166,6 +166,21 @@ class KnowledgeUnitOut(BaseModel):
     extraction_model: str = ""
     created_at: datetime
     updated_at: datetime
+
+
+class KnowledgeUnitCreate(BaseModel):
+    title: str = ""
+    summary: str = ""
+    definition: str = ""
+    conditions: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    pitfalls: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    exam_pattern: str = ""
+    signals: list[str] = Field(default_factory=list)
+    variants: list[str] = Field(default_factory=list)
+    knowledge_point_id: str = ""
+    knowledge_point_name: str = ""
 
 
 class KnowledgeUnitUpdate(BaseModel):

@@ -158,10 +158,10 @@ final class AppStore: ObservableObject {
         case "supervisor": return "学习督导"
         case "examiner": return "出卷老师"
         case "grader": return "改卷老师"
-        case "tutor": return "问答老师"
+        case "tutor": return "答疑老师"
         case "collector": return "资料搜集"
         case "organizer": return "资料整理"
-        case "knowledge": return "知识点整理"
+        case "knowledge": return "答疑老师"
         default: return "辅导员"
         }
     }

@@ -17,6 +17,7 @@ struct KnowledgeMiningView: View {
     @State private var notice: String?
     @State private var selectedUnit: KnowledgeUnitItem?
     @State private var selectedSkill: SkillItem?
+    @State private var creating = false
 
     private struct MiningFilter: Identifiable {
         let value: String
@@ -84,7 +85,7 @@ struct KnowledgeMiningView: View {
                     ContentUnavailableView(
                         "暂无知识笔记",
                         systemImage: "sparkles",
-                        description: Text("在对话里让知识老师分析一道题，再说「保存到知识挖掘」。")
+                        description: Text("在对话里让答疑老师分析一道题，再说「保存到知识挖掘」。")
                     )
                 } else {
                     ForEach(units) { unit in
@@ -141,7 +142,38 @@ struct KnowledgeMiningView: View {
                 }
             }
         }
+        .sheet(isPresented: $creating) {
+            CreateKnowledgeUnitSheet { title, summary, steps, pitfalls, variants, kp in
+                creating = false
+                Task {
+                    busy = true
+                    defer { busy = false }
+                    do {
+                        _ = try await APIClient.shared.createKnowledgeUnit(
+                            title: title,
+                            summary: summary,
+                            steps: steps,
+                            pitfalls: pitfalls,
+                            variants: variants,
+                            knowledgePointName: kp
+                        )
+                        notice = "已新增知识条目"
+                        await load()
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
+                }
+            }
+        }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    creating = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(busy)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Text("从整份资料批量抽取")
@@ -607,6 +639,69 @@ private struct SkillDetailSheet: View {
                         Text(ordered ? "\(index + 1). \(item)" : "• \(item)")
                             .font(.caption)
                     }
+                }
+            }
+        }
+    }
+}
+
+struct CreateKnowledgeUnitSheet: View {
+    let onCreate: (String, String, [String], [String], [String], String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var title = ""
+    @State private var summary = ""
+    @State private var steps = ""
+    @State private var pitfalls = ""
+    @State private var variants = ""
+    @State private var knowledgePoint = ""
+
+    private func lines(_ value: String) -> [String] {
+        value
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("标题（例：牛吃草的三种变形）", text: $title)
+                    TextField("一句话概括", text: $summary)
+                    TextField("知识点（可选）", text: $knowledgePoint)
+                }
+                Section("解题步骤（每行一条）") {
+                    TextEditor(text: $steps)
+                        .frame(minHeight: 90)
+                }
+                Section("易错点（每行一条）") {
+                    TextEditor(text: $pitfalls)
+                        .frame(minHeight: 70)
+                }
+                Section("变式（每行一条）") {
+                    TextEditor(text: $variants)
+                        .frame(minHeight: 70)
+                }
+            }
+            .navigationTitle("手动新增")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        onCreate(
+                            title.trimmingCharacters(in: .whitespaces),
+                            summary.trimmingCharacters(in: .whitespaces),
+                            lines(steps),
+                            lines(pitfalls),
+                            lines(variants),
+                            knowledgePoint.trimmingCharacters(in: .whitespaces)
+                        )
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }

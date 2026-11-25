@@ -1,5 +1,6 @@
 import hashlib
 import json
+import uuid
 from datetime import UTC, timedelta
 from typing import Annotated
 
@@ -22,6 +23,7 @@ from app.rag.index import get_knowledge_card, list_knowledge_tree
 from app.schemas.materials import (
     KnowledgeCardOut,
     KnowledgeNode,
+    KnowledgeUnitCreate,
     KnowledgeUnitOut,
     KnowledgeUnitUpdate,
     SkillOut,
@@ -152,6 +154,45 @@ async def knowledge_units(
         await db.execute(statement.limit(max(1, min(limit, 300))))
     ).scalars()
     return [_unit_out(unit) for unit in rows]
+
+
+@router.post("/units", response_model=KnowledgeUnitOut)
+async def create_knowledge_unit(
+    payload: KnowledgeUnitCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> KnowledgeUnitOut:
+    """手动新增一条知识挖掘记录（不依赖任何资料）。
+
+    这是对话之外的第二条录入路径：做题后想自己整理一条分析，直接在
+    知识挖掘页填，不必回对话让答疑老师代劳。
+    """
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空。")
+
+    unit = KnowledgeUnit(
+        id=uuid.uuid4().hex,
+        material_id=None,
+        chunk_id=None,
+        chunk_type="manual",
+        title=title[:255],
+        summary=payload.summary,
+        definition=payload.definition,
+        conditions_json=json.dumps(payload.conditions, ensure_ascii=False),
+        steps_json=json.dumps(payload.steps, ensure_ascii=False),
+        pitfalls_json=json.dumps(payload.pitfalls, ensure_ascii=False),
+        examples_json=json.dumps(payload.examples, ensure_ascii=False),
+        exam_pattern=payload.exam_pattern,
+        signals_json=json.dumps(payload.signals, ensure_ascii=False),
+        variants_json=json.dumps(payload.variants, ensure_ascii=False),
+        knowledge_point_id=payload.knowledge_point_id,
+        knowledge_point_name=payload.knowledge_point_name,
+        status="draft",
+    )
+    db.add(unit)
+    await db.commit()
+    await db.refresh(unit)
+    return _unit_out(unit)
 
 
 @router.patch("/units/{unit_id}", response_model=KnowledgeUnitOut)

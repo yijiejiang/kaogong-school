@@ -250,7 +250,7 @@ export default function SkillSourcesPage() {
             </section>
 
             <p className="mt-4 text-[10px] leading-5 text-[#a59d90]">
-              问答老师在答疑时每次都从技能表现查，导入完成后不需要重启服务。
+              答疑老师在答疑时每次都从技能表现查，导入完成后不需要重启服务。
             </p>
           </>
         )}

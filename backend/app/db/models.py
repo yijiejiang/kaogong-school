@@ -112,11 +112,18 @@ class KnowledgeUnit(Base):
     __tablename__ = "knowledge_units"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    material_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("materials.id", ondelete="CASCADE"), index=True
+    # 手动新增的知识条目没有来源资料，这两个字段可以为空
+    material_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
     )
-    chunk_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("chunks.id", ondelete="CASCADE"), index=True
+    chunk_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("chunks.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
     )
     chunk_type: Mapped[str] = mapped_column(String(16), default="summary")
     title: Mapped[str] = mapped_column(String(255), default="")

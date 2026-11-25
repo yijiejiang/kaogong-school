@@ -208,8 +208,8 @@ export type SkillConnection = {
 
 export type KnowledgeUnit = {
   id: string;
-  material_id: string;
-  chunk_id: string;
+  material_id: string | null;
+  chunk_id: string | null;
   chunk_type: string;
   title: string;
   summary: string;

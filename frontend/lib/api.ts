@@ -227,6 +227,26 @@ export async function fetchKnowledgeUnits(options?: {
   return request(`/api/knowledge/units?${params.toString()}`);
 }
 
+export async function createKnowledgeUnit(payload: {
+  title: string;
+  summary?: string;
+  definition?: string;
+  conditions?: string[];
+  steps?: string[];
+  pitfalls?: string[];
+  examples?: string[];
+  exam_pattern?: string;
+  signals?: string[];
+  variants?: string[];
+  knowledge_point_id?: string;
+  knowledge_point_name?: string;
+}): Promise<KnowledgeUnit> {
+  return request("/api/knowledge/units", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateKnowledgeUnit(
   id: string,
   payload: Partial<

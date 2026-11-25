@@ -906,7 +906,7 @@ struct SkillConnection: Decodable, Identifiable {
 
 struct KnowledgeUnitItem: Decodable, Identifiable {
     let id: String
-    let materialId: String
+    let materialId: String?
     let chunkType: String
     let title: String
     let summary: String

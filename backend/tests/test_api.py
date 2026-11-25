@@ -143,7 +143,7 @@ def test_chat_knowledge_uses_library() -> None:
 
         answer = _answer_text(body)
         assert response.status_code == 200
-        assert '"to": "knowledge"' in body
+        assert '"to": "tutor"' in body
         assert "速算" in answer or "截位" in answer
         assert "《" in answer
 
@@ -1553,17 +1553,23 @@ async def test_save_skill_and_knowledge() -> None:
         await db.commit()
 
 
-def test_knowledge_agent_has_save_tools() -> None:
+def test_tutor_agent_owns_save_tools() -> None:
+    """答疑老师合并了原知识整理老师，保存类工具归到它名下。"""
     from app.agents.factory import create_root_agent
     from app.schemas.settings import LlmSettings
 
     agent = create_root_agent(
         LlmSettings(api_base="https://example.com/v1", api_key="k", default_model="t")
     )
-    knowledge = next(a for a in agent.sub_agents if a.name == "knowledge")
-    tool_names = {getattr(t, "__name__", "") for t in knowledge.tools}
+    names = {a.name for a in agent.sub_agents}
+    assert "knowledge" not in names
+    assert "tutor" in names
+
+    tutor = next(a for a in agent.sub_agents if a.name == "tutor")
+    tool_names = {getattr(t, "__name__", "") for t in tutor.tools}
     assert "save_skill" in tool_names
     assert "save_knowledge" in tool_names
+    assert "load_module_skills" in tool_names
 
 
 def test_tutor_agent_registered() -> None:
@@ -1818,3 +1824,30 @@ def test_db_busy_returns_readable_error() -> None:
     response = asyncio.run(handle_db_busy(None, exc))
     assert response.status_code == 503
     assert "稍后重试" in response.body.decode()
+
+
+def test_manual_knowledge_unit_without_material() -> None:
+    """手动新增的知识条目没有来源资料，material_id / chunk_id 为空也要能存。"""
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/knowledge/units",
+            json={
+                "title": "牛吃草的三种变形",
+                "summary": "草量增长、牛数变化、混合吃草",
+                "steps": ["设原有草量", "求每天增长量", "代入求解"],
+                "pitfalls": ["忽略草量增长"],
+                "knowledge_point_name": "牛吃草",
+            },
+        )
+        assert created.status_code == 200, created.text
+        unit = created.json()
+        assert unit["title"] == "牛吃草的三种变形"
+        assert unit["material_id"] in (None, "")
+        assert unit["steps"] == ["设原有草量", "求每天增长量", "代入求解"]
+        assert unit["status"] == "draft"
+
+        listed = client.get("/api/knowledge/units", params={"limit": 50}).json()
+        assert any(item["id"] == unit["id"] for item in listed)
+
+        empty = client.post("/api/knowledge/units", json={"title": "   "})
+        assert empty.status_code == 400

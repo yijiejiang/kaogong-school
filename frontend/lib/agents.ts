@@ -48,26 +48,27 @@ export const AGENTS: Record<string, AgentMeta> = {
     dotClass: "bg-[#8a8475]",
     available: true,
   },
+  // 合并前的历史消息作者，保留映射避免旧对话显示成辅导员
   knowledge: {
-    name: "知识点整理",
-    short: "知",
+    name: "答疑老师",
+    short: "答",
     description: "知识树 · 技能卡片",
     avatarClass: "bg-[#e6edf5] text-[#3f5f7f]",
     dotClass: "bg-[#5b7fa6]",
-    available: true,
+    available: false,
   },
   grader: {
     name: "改卷老师",
     short: "改",
-    description: "判分 · 诊断 · 举一反三",
+    description: "成绩 · 错题分布 · 水平变化",
     avatarClass: "bg-[#f3e6e9] text-[#8a3f52]",
     dotClass: "bg-[#a95a6d]",
     available: true,
   },
   tutor: {
-    name: "问答老师",
-    short: "问",
-    description: "做题疑问 · 按技能讲解",
+    name: "答疑老师",
+    short: "答",
+    description: "讲题 · 方法 · 技能地图",
     avatarClass: "bg-[#e3f0ea] text-[#256b52]",
     dotClass: "bg-[#3f8f6c]",
     available: true,
@@ -96,9 +97,8 @@ export const ROLE_OPTIONS = [
   { key: "examiner", label: "出卷老师", hint: "建议强推理模型" },
   { key: "collector", label: "资料搜集", hint: "P1 已接入" },
   { key: "organizer", label: "资料整理", hint: "P1 已接入" },
-  { key: "knowledge", label: "知识点整理", hint: "P1 已接入" },
   { key: "grader", label: "改卷老师", hint: "已接入" },
-  { key: "tutor", label: "问答老师", hint: "做题答疑" },
+  { key: "tutor", label: "答疑老师", hint: "讲题与技能" },
 ];
 
 export function agentMeta(author: string): AgentMeta {

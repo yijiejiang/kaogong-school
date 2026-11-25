@@ -9,6 +9,7 @@ import {
   CircleSlash,
   Loader2,
   Pencil,
+  Plus,
   RefreshCw,
   Sparkles,
   X,
@@ -17,6 +18,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  createKnowledgeUnit,
   createPointFromUnit,
   extractMaterialUnits,
   fetchKnowledgeUnits,
@@ -64,6 +66,7 @@ export default function KnowledgeMiningPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<{
     kind: "success" | "error";
     text: string;
@@ -229,7 +232,7 @@ export default function KnowledgeMiningPage() {
               知识挖掘
             </h1>
             <p className="mt-1.5 max-w-2xl text-xs leading-5 text-[#6b6459]">
-              单题的深度分析存在这里。在对话里让知识老师讲完一道题，说「保存到知识挖掘」就会出现在下面。
+              单题的深度分析存在这里。在对话里让答疑老师讲完一道题，说「保存到知识挖掘」就会出现在下面；也可以点右上角「手动新增」自己写。
               技能地图是另一层：保存的是可反复套用的方法，不是单道题。
             </p>
           </div>
@@ -248,9 +251,17 @@ export default function KnowledgeMiningPage() {
             </select>
             <button
               type="button"
+              onClick={() => setCreating(true)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink bg-ink px-3 text-xs font-medium text-white"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              手动新增
+            </button>
+            <button
+              type="button"
               onClick={handleExtract}
               disabled={extracting || !materialId}
-              title="从整份资料批量抽取知识单元。日常用法是在对话里让知识老师分析单题后保存。"
+              title="从整份资料批量抽取知识单元。日常用法是在对话里让答疑老师分析单题后保存。"
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#d8d0c4] bg-white px-3 text-xs font-medium text-[#6b6459] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {extracting ? (
@@ -374,7 +385,7 @@ export default function KnowledgeMiningPage() {
                 text={
                   materialId
                     ? "这份资料在当前筛选下没有内容。"
-                    : "还没有知识笔记。在对话里让知识老师分析一道题，然后说「保存到知识挖掘」。"
+                    : "还没有知识笔记。可以让答疑老师分析一道题后说「保存到知识挖掘」，或点右上角「手动新增」自己写一条。"
                 }
               />
             ) : (
@@ -409,6 +420,25 @@ export default function KnowledgeMiningPage() {
           </div>
         )}
       </div>
+
+      {creating && (
+        <CreateUnitDialog
+          onClose={() => setCreating(false)}
+          onCreate={async (payload) => {
+            try {
+              await createKnowledgeUnit(payload);
+              setCreating(false);
+              setNotice({ kind: "success", text: "已新增知识条目" });
+              await load();
+            } catch (error) {
+              setNotice({
+                kind: "error",
+                text: error instanceof Error ? error.message : "新增失败",
+              });
+            }
+          }}
+        />
+      )}
     </main>
   );
 }
@@ -837,5 +867,146 @@ function SkillCard({ skill, busy, onStatus, onSave }: SkillCardProps) {
         )}
       </div>
     </article>
+  );
+}
+
+function CreateUnitDialog({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (payload: Parameters<typeof createKnowledgeUnit>[0]) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const [definition, setDefinition] = useState("");
+  const [steps, setSteps] = useState("");
+  const [pitfalls, setPitfalls] = useState("");
+  const [variants, setVariants] = useState("");
+  const [kpName, setKpName] = useState("");
+
+  const splitLines = (value: string) =>
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+  const submit = () => {
+    if (!title.trim()) return;
+    onCreate({
+      title: title.trim(),
+      summary: summary.trim(),
+      definition: definition.trim(),
+      steps: splitLines(steps),
+      pitfalls: splitLines(pitfalls),
+      variants: splitLines(variants),
+      knowledge_point_name: kpName.trim(),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/30 p-4 sm:items-center">
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">手动新增知识条目</h2>
+          <button type="button" onClick={onClose} aria-label="关闭">
+            <X className="h-4 w-4 text-[#8a8475]" />
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] leading-5 text-[#8a8475]">
+          做题后自己整理的分析可以直接写在这里，不必回对话让答疑老师代劳。
+          列表、陷阱、变式每行一条。
+        </p>
+
+        <div className="mt-4 space-y-3">
+          <label className="block">
+            <span className="text-[11px] font-medium text-[#6b6459]">标题 *</span>
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="例：牛吃草的三种变形"
+              className="mt-1 h-9 w-full rounded-lg border border-[#d8d0c4] px-2.5 text-xs outline-none focus:border-ink"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-[#6b6459]">一句话概括</span>
+            <input
+              value={summary}
+              onChange={(event) => setSummary(event.target.value)}
+              placeholder="这题考什么、怎么识别"
+              className="mt-1 h-9 w-full rounded-lg border border-[#d8d0c4] px-2.5 text-xs outline-none focus:border-ink"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-[#6b6459]">知识点（可选）</span>
+            <input
+              value={kpName}
+              onChange={(event) => setKpName(event.target.value)}
+              placeholder="例：牛吃草"
+              className="mt-1 h-9 w-full rounded-lg border border-[#d8d0c4] px-2.5 text-xs outline-none focus:border-ink"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-[#6b6459]">详细说明</span>
+            <textarea
+              value={definition}
+              onChange={(event) => setDefinition(event.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded-lg border border-[#d8d0c4] px-2.5 py-2 text-xs leading-5 outline-none focus:border-ink"
+            />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className="text-[11px] font-medium text-[#6b6459]">解题步骤</span>
+              <textarea
+                value={steps}
+                onChange={(event) => setSteps(event.target.value)}
+                rows={4}
+                placeholder={"设原有草量\n求每天增长量\n代入求解"}
+                className="mt-1 w-full rounded-lg border border-[#d8d0c4] px-2.5 py-2 text-xs leading-5 outline-none focus:border-ink"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-medium text-[#6b6459]">易错点</span>
+              <textarea
+                value={pitfalls}
+                onChange={(event) => setPitfalls(event.target.value)}
+                rows={4}
+                placeholder={"忽略草量增长\n单位没统一"}
+                className="mt-1 w-full rounded-lg border border-[#d8d0c4] px-2.5 py-2 text-xs leading-5 outline-none focus:border-ink"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-medium text-[#6b6459]">变式</span>
+              <textarea
+                value={variants}
+                onChange={(event) => setVariants(event.target.value)}
+                rows={4}
+                placeholder={"改成牛数递减\n改成两片草地"}
+                className="mt-1 w-full rounded-lg border border-[#d8d0c4] px-2.5 py-2 text-xs leading-5 outline-none focus:border-ink"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 rounded-lg border border-[#d8d0c4] px-3 text-xs text-[#6b6459]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!title.trim()}
+            className="h-9 rounded-lg bg-ink px-4 text-xs font-medium text-white disabled:opacity-40"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
