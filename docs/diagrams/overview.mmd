@@ -1,13 +1,13 @@
 flowchart TB
   subgraph Clients["客户端"]
-    Web["Next.js Web<br/>对话 / 考试 / 资料库 / 学情 / 设置"]
+    Web["Next.js Web<br/>对话 / 考试 / 资料库 / 题库 / 学情 / 设置"]
     IOS["SwiftUI iOS<br/>REST + SSE"]
     PWA["PWA 安装壳"]
   end
 
   subgraph Edge["接入层 · FastAPI"]
     SSE["SSE 对话<br/>/api/chat/stream"]
-    REST["REST API<br/>materials · exams · analytics · plan · settings · asr · notifications"]
+    REST["REST API<br/>materials · questions · exams · analytics · plan · settings · asr · notifications"]
   end
 
   subgraph Agents["Google ADK 多智能体"]
