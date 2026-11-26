@@ -22,3 +22,5 @@ xcuserdata/
 # 本地签名配置（含 Team ID），不要提交
 ios/Config/Signing.local.xcconfig
 *.xcuserstate
+# 设计稿源文件（本地归档）。成品在 docs/images/ 和 AppIcon.appiconset/
+docs/assets/
