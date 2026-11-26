@@ -1,4 +1,4 @@
-.PHONY: start doctor restart demo install infra backend backend-demo backend-lan frontend test lint install-service uninstall-service service-logs ios ios-build tailscale-serve tailscale-status tailscale-stop
+.PHONY: start doctor restart demo install infra backend backend-demo backend-lan frontend test lint install-service uninstall-service service-logs diagrams ios ios-build tailscale-serve tailscale-status tailscale-stop
 
 TAILSCALE_BIN ?= tailscale
 
@@ -10,6 +10,10 @@ doctor:
 
 restart:
 	./doctor.sh restart --force
+
+# 改了 docs/diagrams/*.mmd 之后跑一次，把 PNG/SVG 重新导出
+diagrams:
+	./scripts/render-diagrams.sh $(DIAGRAM)
 
 demo:
 	MODE=demo ./start.sh

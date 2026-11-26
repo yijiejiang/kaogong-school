@@ -81,8 +81,11 @@
 
 ## 重新渲染
 
+改了 `docs/diagrams/` 下的 `.mmd` 之后，一定要重新导出图片，否则仓库里的图和源码对不上：
+
 ```bash
-npx --yes @mermaid-js/mermaid-cli -i docs/diagrams/overview.mmd -o docs/diagrams/overview.png -b white -s 2
+make diagrams              # 全部重渲染
+make diagrams DIAGRAM=agents   # 只渲染其中一张
 ```
 
-其他图同理，替换文件名即可。
+脚本会自动遍历 `docs/diagrams/*.mmd`，同时生成 PNG 和 SVG。首次运行会通过 npx 下载 mermaid-cli。

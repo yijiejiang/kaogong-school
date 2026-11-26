@@ -50,6 +50,12 @@ cd frontend && pnpm build
 cd backend && uv run python scripts/evaluate_library.py
 ```
 
+如果改了文档里的架构图（`docs/diagrams/*.mmd`）：
+
+```bash
+make diagrams
+```
+
 如果改了 iOS：
 
 ```bash

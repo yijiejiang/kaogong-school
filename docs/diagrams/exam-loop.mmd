@@ -1,5 +1,6 @@
 flowchart LR
-  Bank[("题库 89+ 题")] --> Generate["组卷"]
+  Upload["上传资料<br/>自动抽题"] --> Bank[("题库<br/>内置种子 + 入库抽取")]
+  Bank --> Generate["组卷<br/>可按题型标签选题"]
   AI["AI 原创题<br/>校验后入库"] --> Generate
   Generate --> Take["限时作答<br/>自动保存 / 倒计时"]
   Take --> Grade{"判分"}
@@ -11,4 +12,4 @@ flowchart LR
   Mastery --> Plan["周计划 / 复习到期"]
   Mastery --> Dashboard["学情看板 / 周报"]
   Plan --> Notify["每日提醒 / 周报通知"]
-  Report --> GraderChat["改卷老师对话"]
+  Report --> GraderChat["改卷老师对话<br/>带 attempt 上下文"]
