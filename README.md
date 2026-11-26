@@ -307,7 +307,7 @@ https://github.com/yijiejiang/kaogong-school
    - 确认 README.md、Makefile、backend/、frontend/ 都在
 
 3. 后端配置
-   - cp backend/.env.example backend/.env
+   - 先看 backend/.env 在不在；不在的话从 backend/.env.example 复制一份
    - 生成随机 APP_SECRET_KEY 写进去，别用默认值
    - 问我有没有 LLM 的 Base URL、API Key、模型名
      有就写进 LLM_API_BASE、LLM_API_KEY、LLM_DEFAULT_MODEL
@@ -319,12 +319,15 @@ https://github.com/yijiejiang/kaogong-school
    - 前端：cd frontend && pnpm install（没 pnpm 就用 npm，并说明区别）
 
 5. 启动和验证
-   - 后端：cd backend && uv run uvicorn app.main:app --reload --port 8000
+   - 首选 `make start`：它会自己检查环境、起前后端、等两边就绪
+   - 想分开起也行：
+     后端 cd backend && uv run uvicorn app.main:app --reload --port 8000
      （演示模式加 MOCK_LLM=1）
-   - 前端：cd frontend && pnpm dev
+     前端 cd frontend && pnpm dev
    - curl http://127.0.0.1:8000/api/health 应该返回 status: ok
    - 打开 http://localhost:3000，确认界面能加载
    - 发一句「你好」，确认有回复
+   - 起不来先跑 `./doctor.sh` 看是卡住还是没起来
 
 6. 可选项（先问我，别自己决定）
    - Embedding：本机有 Ollama 的话可以用 qwen3-embedding:0.6b，填到设置页后重新索引
