@@ -40,7 +40,7 @@ make backend-demo   # 无 Key 的本地演示模式
 ## 提交前自检
 
 ```bash
-cd backend && uv run ruff check . && uv run pytest -q
+cd backend && uv run ruff check app tests scripts && uv run pytest -q
 cd frontend && pnpm build
 ```
 
@@ -63,7 +63,7 @@ make ios-build
 ### 后端（Python）
 
 - 使用 `uv` 管理依赖，不要直接改 `requirements.txt`。
-- 遵循 `ruff` 规则（`uv run ruff check .`）。
+- 遵循 `ruff` 规则（`uv run ruff check app tests scripts`，与 CI 一致）。
 - 异步优先：数据库、HTTP、文件 IO 用 `async`；阻塞操作放 `asyncio.to_thread`。
 - 新增 API 时同步补测试（`backend/tests/test_api.py`）。
 - 新增配置项时同步更新 `backend/.env.example` 和 README 的配置表。

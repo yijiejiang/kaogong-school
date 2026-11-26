@@ -21,6 +21,7 @@
 现在它大概能做完这些事：
 
 - 上传讲义、网页、截图、录音或者 B 站课程，自动解析成可检索的知识
+- 资料里带题目的话自动切进题库，按「牛吃草」这种细粒度标签打标，出卷时按标签选题
 - 从资料里抽出「这个知识点怎么考、题目长什么样、步骤是什么、坑在哪、还会怎么变」
 - 按模块生成试卷，限时做完自动判分，逐题讲错因，顺手更新掌握度
 - 用技能地图看每个板块练到什么程度，按薄弱点排周计划
@@ -90,14 +91,11 @@
 git clone https://github.com/yijiejiang/kaogong-school.git
 cd kaogong-school
 
-cp backend/.env.example backend/.env
-# 改一下 APP_SECRET_KEY，其他留空也能跑
-
 make install
 make start
 ```
 
-`make start` 会检查环境，缺 `.env` 自动生成随机密钥，然后同时起前后端，等两边都就绪才提示完成。Ctrl-C 一起停。
+`make start` 会检查环境，缺 `.env` 自动从示例复制并生成随机密钥，然后同时起前后端，等两边都就绪才提示完成。Ctrl-C 一起停。
 
 打开 http://localhost:3000，去「设置」填模型地址和 Key。
 
@@ -198,7 +196,7 @@ flowchart LR
     C --> LLM[OpenAI 兼容模型]
     E --> LLM
     G --> LLM
-    K --> LLM
+    T --> LLM
 ```
 
 分层细节在 [docs/architecture.md](docs/architecture.md)。
@@ -211,7 +209,7 @@ flowchart LR
 open ios/KaogongSchool.xcodeproj
 ```
 
-原生 SwiftUI，最低 iOS 17。对话、学情、考试、资料、知识挖掘、技能地图、设置都在，另外支持视频关键帧、扫码连接和连接历史。
+原生 SwiftUI，最低 iOS 17。对话、学情、考试、资料、题库、知识挖掘、技能地图、费用、设置都在，另外支持视频关键帧、扫码连接和连接历史。
 
 考试作答时可以随手打开草稿纸，用 Apple Pencil 手写演算，每道题各自保存一页，交卷后还能回看。
 
@@ -356,7 +354,8 @@ https://github.com/yijiejiang/kaogong-school
 |---|---|
 | 对话 | `POST /api/chat/stream`、`GET /api/chat/sessions` |
 | 资料 | `/api/materials/*`、`POST /api/search` |
-| 知识 | `/api/knowledge/tree`、`/units`、`/skills`、`/skill-map` |
+| 题库 | `GET /api/questions`、`GET /api/questions/tags`、`PATCH/DELETE /api/questions/{id}`、`POST /api/questions/extract/{material_id}` |
+| 知识 | `/api/knowledge/tree`、`/units`（含手动新增）、`/skills`、`/skill-map`、`/skill-sources` |
 | 考试 | `/api/exams/*`、`/api/attempts/*` |
 | 学情 | `/api/analytics/*`、`/api/plan/*` |
 | 费用 | `GET /api/analytics/usage`、`GET /api/analytics/billing` |
@@ -366,6 +365,8 @@ https://github.com/yijiejiang/kaogong-school
 | 设置 | `/api/settings`、`/api/settings/models`、`/api/settings/test` |
 
 按学习者隔离的接口都收 `user_id` 查询参数，Web 和 iOS 会自动带上当前学习者。
+
+题目抽取是异步的：`POST /api/questions/extract/{material_id}` 立即返回 `job_id`，再用 `GET /api/questions/extract/jobs/{job_id}` 查进度。几百道题的资料要跑几分钟，同步请求会先被浏览器超时掐断。
 
 ---
 
@@ -410,6 +411,10 @@ xcodebuild -project ios/KaogongSchool.xcodeproj \
 
 扫描 PDF 的完整 OCR 依赖 DeepSeek 官方 Key，没有的话只能索引有文字层的页面。
 
+影印件 OCR 偶尔会把题号和条件弄丢，抽出来的题目可能缺条件或缺答案。解析篇建议只用于对答案，别当题库导入——含大量「参考答案 / 解析」的资料会被自动识别并跳过。
+
+题目抽取是后台任务，中途刷新页面任务会继续跑，但进度条会丢，重新点一次才看得到。
+
 费用是估算。设置页单价填 0 时只统计 token，不算钱。
 
 ---
@@ -421,7 +426,7 @@ Issue 和 PR 都欢迎，比较想要的是：更多题库和评测案例、技�
 提之前看一眼 [CONTRIBUTING.md](CONTRIBUTING.md)，顺手跑一下：
 
 ```bash
-cd backend && uv run ruff check . && uv run pytest -q
+cd backend && uv run ruff check app tests scripts && uv run pytest -q
 ```
 
 改了资料解析或检索，再跑一遍上面的评测脚本。`backend/.env`、Key、数据库和上传的资料都别提交。

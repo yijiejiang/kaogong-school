@@ -23,13 +23,13 @@
 
 | 角色 | 职责 | 主要工具 |
 | --- | --- | --- |
-| 辅导员 counselor | 总入口、答疑、分诊、陪伴 | `get_student_context` |
+| 辅导员 counselor | 总入口、答疑、分诊、陪伴 | `get_student_context`、`get_study_snapshot` |
 | 学习督导 supervisor | 学情、掌握度、计划、进度 | `get_study_snapshot`、`generate_study_plan` |
 | 出卷老师 examiner | 组卷、AI 原创题、模拟考试 | `generate_exam` |
-| 改卷老师 grader | 得分解释、错题、举一反三 | `get_latest_attempt_report` |
+| 改卷老师 grader | 成绩解读、错题分布、水平变化 | `get_latest_attempt_report` |
 | 资料搜集 collector | 上传、网页导入、网页搜索 | `import_url`、`web_search`、`list_materials` |
 | 资料整理 organizer | 入库状态、分块质量、重建索引 | `list_materials`、`reindex_material` |
-| 知识点整理 knowledge | 知识树、知识卡片、带引用回答 | `search_knowledge`、`get_knowledge_card` |
+| 答疑老师 tutor | 讲单题、讲方法、查技能地图、保存知识 | `find_skills`、`get_skill_detail`、`load_module_skills`、`search_knowledge` |
 
 ## 3. 资料入库与 RAG
 
@@ -46,7 +46,7 @@
 
 ![考试与学情闭环](diagrams/exam-loop.png)
 
-- **组卷**：题库 89+ 题，覆盖行测五模块和申论主观题；可加入 AI 原创题，失败自动回退题库。
+- **组卷**：从题库选题（内置 89+ 道种子题，上传的资料里带题目会自动抽进题库），可按细粒度标签筛选；可加入 AI 原创题，失败自动回退题库。
 - **判分**：客观题精确匹配；主观题按评分细则踩点，真实 LLM 可用时调用 grader，失败回退关键词。
 - **报告**：总分、逐题解析、评分细则命中、举一反三、知识点掌握度变化。
 - **学情**：掌握度 v2 按难度加权、计算置信度、按时间衰减；周计划按薄弱点与复习到期生成。

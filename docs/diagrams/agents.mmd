@@ -1,15 +1,17 @@
 flowchart LR
   User(["学生"]) --> Counselor["辅导员 counselor<br/>唯一总入口"]
+  Counselor -->|讲题 / 方法 / 技能地图| Tutor["答疑老师"]
   Counselor -->|学情 / 计划 / 进度| Supervisor["学习督导"]
   Counselor -->|出卷 / 组卷| Examiner["出卷老师"]
-  Counselor -->|错题 / 报告 / 举一反三| Grader["改卷老师"]
+  Counselor -->|考试成绩 / 错题分布| Grader["改卷老师"]
   Counselor -->|上传 / 导入 / 搜索| Collector["资料搜集"]
   Counselor -->|入库状态 / 重建索引| Organizer["资料整理"]
-  Counselor -->|知识点 / 知识树 / 引用| Knowledge["知识点整理"]
 
+  Tutor -.-> T1["find_skills / get_skill_detail<br/>load_module_skills<br/>search_knowledge<br/>save_knowledge / save_skill"]
   Supervisor -.-> S1["get_study_snapshot<br/>generate_study_plan<br/>get_student_context"]
-  Examiner -.-> E1["generate_exam<br/>AI 原创题 + 题库回退"]
-  Grader -.-> G1["get_latest_attempt_report<br/>错题解释 / 变式"]
+  Examiner -.-> E1["generate_exam<br/>按标签选题 + AI 原创题"]
+  Grader -.-> G1["get_latest_attempt_report<br/>按 attempt 或最近一次"]
   Collector -.-> C1["import_url<br/>web_search<br/>list_materials"]
   Organizer -.-> O1["list_materials<br/>reindex_material"]
-  Knowledge -.-> K1["search_knowledge<br/>get_knowledge_card<br/>list_knowledge_tree"]
+
+  Grader -->|讲某道题怎么做| Tutor
