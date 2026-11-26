@@ -155,6 +155,13 @@ struct ChatView: View {
                         .clipShape(Capsule())
                 }
             }
+            NavigationLink {
+                NotificationsView()
+            } label: {
+                Image(systemName: "bell")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.muted)
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

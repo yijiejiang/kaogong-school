@@ -1271,3 +1271,92 @@ struct QuestionTagSummary: Decodable {
     let tags: [TagCount]
     let modules: [ModuleCount]
 }
+
+// MARK: - 技能来源
+
+struct SkillSourceList: Decodable {
+    struct Source: Decodable, Identifiable {
+        let source: String
+        let label: String
+        let count: Int
+        let modules: [String]
+        let file_count: Int
+        let last_updated: String
+
+        var id: String { source }
+    }
+
+    struct Pack: Decodable, Identifiable {
+        let key: String
+        let label: String
+        let repo: String
+        let description: String
+        let builtin: Bool
+        let installed: Bool
+
+        var id: String { key }
+    }
+
+    let sources: [Source]
+    let packs: [Pack]
+}
+
+struct SkillSourceImport: Decodable {
+    let status: String
+}
+
+// MARK: - 周报
+
+struct WeeklyReport: Decodable {
+    let period_start: String
+    let period_end: String
+    let attempts: Int
+    let questions: Int
+    let accuracy: Double
+    let study_minutes: Int
+    let wrong_count: Int
+    let plan_done: Int
+    let plan_total: Int
+    let weak_points: [String]
+    let summary: String
+}
+
+// MARK: - 通知
+
+struct NotificationItem: Decodable, Identifiable {
+    let id: String
+    let type: String
+    let title: String
+    let body: String
+    let read: Bool
+    let created_at: String
+}
+
+struct NotificationList: Decodable {
+    let items: [NotificationItem]
+    let unread: Int
+}
+
+// MARK: - 题目抽取任务
+
+struct ExtractJobAccepted: Decodable {
+    let status: String
+    let job_id: String
+    let message: String
+}
+
+struct ExtractJobState: Decodable {
+    struct Result: Decodable {
+        let questions: Int?
+        let model: String?
+        let warning: String?
+        let skipped: String?
+    }
+
+    let id: String
+    let status: String
+    let progress: Double
+    let message: String
+    let error: String
+    let result: Result?
+}

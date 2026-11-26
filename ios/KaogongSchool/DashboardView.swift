@@ -35,6 +35,13 @@ struct DashboardView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
+                        WeeklyReportView()
+                    } label: {
+                        Image(systemName: "doc.text")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
                         CostView()
                     } label: {
                         Image(systemName: "wallet.pass")

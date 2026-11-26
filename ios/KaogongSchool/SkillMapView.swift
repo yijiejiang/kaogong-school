@@ -80,6 +80,15 @@ struct SkillMapView: View {
             .padding()
         }
         .background(Theme.background.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    SkillSourcesView()
+                } label: {
+                    Image(systemName: "shippingbox")
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
         .sheet(item: $selectedSkill) { skill in

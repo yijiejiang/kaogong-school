@@ -9,6 +9,9 @@ struct QuestionBankView: View {
     @State private var activeTag = ""
     @State private var activeModule = ""
     @State private var selected: BankQuestion?
+    @State private var materials: [MaterialItem] = []
+    @State private var extracting = false
+    @State private var extractMessage: String?
 
     private var modules: [QuestionTagSummary.ModuleCount] {
         tags?.modules ?? []
@@ -51,6 +54,17 @@ struct QuestionBankView: View {
                             .pickerStyle(.menu)
                             .onChange(of: activeModule) {
                                 Task { await load() }
+                            }
+                        }
+
+                        if let extractMessage {
+                            Section {
+                                HStack(spacing: 8) {
+                                    if extracting { ProgressView() }
+                                    Text(extractMessage)
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.muted)
+                                }
                             }
                         }
 
@@ -139,7 +153,29 @@ struct QuestionBankView: View {
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("题库")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await load() }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Text("从资料重新识别")
+                            .font(.caption2)
+                        if materials.isEmpty {
+                            Text("没有可识别的资料")
+                        }
+                        ForEach(materials) { material in
+                            Button(material.title) {
+                                Task { await extract(from: material) }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(extracting)
+                }
+            }
+            .task {
+                await load()
+                await loadMaterials()
+            }
             .refreshable { await load() }
             .sheet(item: $selected) { question in
                 QuestionEditSheet(question: question) {
@@ -205,6 +241,41 @@ struct QuestionBankView: View {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    private func loadMaterials() async {
+        materials = (try? await APIClient.shared.materials()) ?? []
+    }
+
+    /// 从资料抽取题目。接口立即返回 job_id，再轮询进度。
+    private func extract(from material: MaterialItem) async {
+        extracting = true
+        extractMessage = "正在识别题目…"
+        defer { extracting = false }
+        do {
+            let accepted = try await APIClient.shared.extractQuestions(materialId: material.id)
+            for _ in 0..<600 {
+                let job = try await APIClient.shared.extractJob(id: accepted.job_id)
+                if job.status == "done" {
+                    if job.result?.skipped == "answer_key" {
+                        extractMessage = job.result?.warning ?? "这份资料是解析篇，已跳过"
+                    } else {
+                        extractMessage = "识别完成，新增 \(job.result?.questions ?? 0) 道题"
+                    }
+                    await load()
+                    return
+                }
+                if job.status == "failed" {
+                    extractMessage = job.error.isEmpty ? "识别失败" : job.error
+                    return
+                }
+                extractMessage = "\(job.message)（\(Int(job.progress * 100))%）"
+                try? await Task.sleep(for: .seconds(2))
+            }
+            extractMessage = "识别超时，可稍后刷新查看"
+        } catch {
+            extractMessage = error.localizedDescription
+        }
     }
 
     private func remove(_ question: BankQuestion) async {

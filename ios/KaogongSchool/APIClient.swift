@@ -548,4 +548,74 @@ actor APIClient {
             json: ["url": value]
         )
     }
+
+    // MARK: - 技能来源
+
+    func skillSources() async throws -> SkillSourceList {
+        try await get("/api/knowledge/skill-sources")
+    }
+
+    func importSkillPack(repo: String, useBuiltin: Bool) async throws -> SkillSourceImport {
+        try await send(
+            "/api/knowledge/skill-sources/import",
+            method: "POST",
+            json: useBuiltin
+                ? ["use_builtin": true, "source_key": "huasheng13"]
+                : ["repo": repo]
+        )
+    }
+
+    // MARK: - 周报与通知
+
+    func weeklyReport() async throws -> WeeklyReport {
+        try await get("/api/analytics/weekly-report", query: ["user_id": userId])
+    }
+
+    func notifications(limit: Int = 20) async throws -> NotificationList {
+        try await get(
+            "/api/notifications",
+            query: ["user_id": userId, "limit": String(limit)]
+        )
+    }
+
+    func markAllNotificationsRead() async throws {
+        struct Response: Decodable { let ok: Bool }
+        let _: Response = try await send(
+            "/api/notifications/read-all",
+            method: "POST",
+            query: ["user_id": userId],
+            json: [:]
+        )
+    }
+
+    func markNotificationRead(id: String) async throws {
+        struct Response: Decodable { let id: String }
+        let _: Response = try await send(
+            "/api/notifications/\(id)/read",
+            method: "PATCH",
+            query: ["user_id": userId],
+            json: [:]
+        )
+    }
+
+    // MARK: - 题目抽取任务
+
+    func extractQuestions(materialId: String, force: Bool = false) async throws -> ExtractJobAccepted {
+        try await send(
+            "/api/questions/extract/\(materialId)",
+            method: "POST",
+            query: force ? ["force": "true"] : [:],
+            json: [:]
+        )
+    }
+
+    func extractJob(id: String) async throws -> ExtractJobState {
+        try await get("/api/questions/extract/jobs/\(id)")
+    }
+
+    // MARK: - 继续作答
+
+    func attemptState(attemptId: String) async throws -> AttemptStart {
+        try await get("/api/attempts/\(attemptId)")
+    }
 }
