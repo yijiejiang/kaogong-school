@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
+# 每次运行前清掉上一次留下的库。否则本地反复跑会积累数据，而 CI 是全新库，
+# 两边结果不一致——曾经因此出现「本地通过、CI 失败」。
 TEST_DB = Path(tempfile.gettempdir()) / "kaogong_pytest.db"
+for _suffix in ("", "-wal", "-shm"):
+    Path(f"{TEST_DB}{_suffix}").unlink(missing_ok=True)
 os.environ["MOCK_LLM"] = "1"
 os.environ["ENABLE_SCHEDULER"] = "0"
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB}"
@@ -194,6 +198,14 @@ def _generate_and_submit(
 
 def test_generate_exam_and_submit() -> None:
     with TestClient(app) as client:
+        # 技能库是手动导入的，全新库（如 CI）里没有。缺了它题目关联不到技能，
+        # skills / skill_changes 都会是空的，所以先确保技能包已装。
+        if not client.get("/api/knowledge/skills", params={"limit": 1}).json():
+            client.post(
+                "/api/knowledge/skill-sources/import",
+                json={"use_builtin": True, "source_key": "huasheng13"},
+            )
+
         exam, report = _generate_and_submit(client, "pytest-p2", 30)
 
         assert exam["question_count"] == 30
