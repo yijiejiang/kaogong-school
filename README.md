@@ -2,7 +2,7 @@
 
 <img src="docs/images/banner.png" alt="考公私塾 · 多智能体考公辅导系统" width="100%">
 
-自己做的一个考公学习系统。资料、知识、技能、出卷、改卷、学情都放在一个对话框里，数据默认存在本机。
+自己做的一个考公学习系统。资料、题库、知识、技能、出卷、改卷、学情都放在一个对话框里，数据默认存在本机。
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
