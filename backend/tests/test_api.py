@@ -193,7 +193,20 @@ def _generate_and_submit(
         json={"answers": answers},
     )
     assert submit.status_code == 200
-    return exam, submit.json()
+    assert submit.json()["status"] == "grading"
+
+    # 批改在后台跑，轮询报告接口等它完成
+    attempt_id = start_data["attempt_id"]
+    report: dict = {}
+    for _ in range(300):
+        data = client.get(f"/api/attempts/{attempt_id}/report").json()
+        if data.get("status") == "graded":
+            report = data
+            break
+        assert data.get("status") == "grading", data
+        time.sleep(0.1)
+    assert report, "grading should finish within 30s"
+    return exam, report
 
 
 def test_generate_exam_and_submit() -> None:

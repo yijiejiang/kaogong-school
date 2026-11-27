@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import Attempt
 from app.db.session import get_db
 from app.exams.service import (
     ExamError,
@@ -19,7 +20,6 @@ from app.exams.service import (
 )
 from app.schemas.exams import (
     AnswerSaveRequest,
-    AttemptReport,
     AttemptStart,
     AttemptState,
     AttemptSummary,
@@ -122,27 +122,36 @@ async def save(
     return {"ok": True, "saved": saved}
 
 
-@router.post("/attempts/{attempt_id}/submit", response_model=AttemptReport)
+@router.post("/attempts/{attempt_id}/submit")
 async def submit(
     attempt_id: str,
     payload: SubmitRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> AttemptReport:
+) -> dict:
+    """交卷：保存答案后立即返回，批改在后台跑，完成后发通知。
+
+    批改要给每道错题生成讲解，几十秒到几分钟。同步等会让学生一直卡在
+    交卷界面，所以改成先返回 grading 状态。
+    """
     try:
-        report = await submit_attempt(
+        await submit_attempt(
             db, attempt_id, [item.model_dump() for item in payload.answers]
         )
     except ExamError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return AttemptReport(**report)
+    attempt = await db.get(Attempt, attempt_id)
+    return {
+        "status": attempt.status if attempt else "grading",
+        "attempt_id": attempt_id,
+    }
 
 
-@router.get("/attempts/{attempt_id}/report", response_model=AttemptReport)
+@router.get("/attempts/{attempt_id}/report")
 async def report(
     attempt_id: str, db: Annotated[AsyncSession, Depends(get_db)]
-) -> AttemptReport:
+) -> dict:
     try:
         data = await get_report(db, attempt_id)
     except ExamError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return AttemptReport(**data)
+    return data

@@ -8,6 +8,7 @@ class NotificationOut(BaseModel):
     body: str
     read: bool
     created_at: str
+    link: str = ""
 
 
 class NotificationList(BaseModel):

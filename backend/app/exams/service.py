@@ -1,6 +1,8 @@
 """Exam generation, attempt lifecycle, and report retrieval."""
 
+import asyncio
 import json
+import logging
 import random
 import uuid
 from datetime import UTC
@@ -24,6 +26,11 @@ from app.schemas.settings import LlmSettings
 from app.services.llm import role_model_config
 from app.services.skill_matching import load_skill_index, match_skills
 from app.services.usage import record_usage
+
+logger = logging.getLogger(__name__)
+
+# 后台批改任务，防止被 GC 回收
+_grading_tasks: set[asyncio.Task] = set()
 
 
 class ExamError(RuntimeError):
@@ -410,38 +417,105 @@ async def save_answers(
 async def submit_attempt(
     db: AsyncSession, attempt_id: str, answers: list[dict]
 ) -> dict:
+    """保存答案并把状态推进到 grading，真正的批改交给后台任务。
+
+    批改要给每道错题调一次 LLM 生成讲解，几十秒到几分钟不等。同步等会让
+    学生一直停在交卷界面。
+    """
     attempt = await db.get(Attempt, attempt_id)
     if attempt is None:
         raise ExamError("作答记录不存在。")
-    if attempt.status == "graded":
+    if attempt.status in ("graded", "grading"):
         return json.loads(attempt.report_json or "{}")
 
     await save_answers(db, attempt_id, answers)
     attempt = await db.get(Attempt, attempt_id)
     if attempt is None:
         raise ExamError("作答记录不存在。")
-    exam = await db.get(Exam, attempt.exam_id)
-    if exam is None:
-        raise ExamError("试卷不存在。")
-
-    rows = (
-        await db.execute(
-            select(ExamQuestion, Question)
-            .join(Question, ExamQuestion.question_id == Question.id)
-            .where(ExamQuestion.exam_id == attempt.exam_id)
-            .order_by(ExamQuestion.order_index)
-        )
-    ).all()
-    answer_rows = (
-        await db.execute(select(Answer).where(Answer.attempt_id == attempt_id))
-    ).scalars().all()
-
-    report = await grade_attempt(db, attempt, exam, rows, list(answer_rows))
-    attempt.status = "graded"
+    attempt.status = "grading"
     attempt.submitted_at = utcnow()
-    attempt.score = float(report["score"])
-    attempt.total_score = float(report["total_score"])
-    attempt.report_json = json.dumps(report, ensure_ascii=False)
+    await db.commit()
+
+    task = asyncio.create_task(grade_submitted_attempt(attempt_id))
+    _grading_tasks.add(task)
+    task.add_done_callback(_grading_tasks.discard)
+    return {}
+
+
+async def grade_submitted_attempt(attempt_id: str) -> None:
+    """后台批改：判分、生成讲解、写报告，完成后发通知。"""
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as db:
+        attempt = await db.get(Attempt, attempt_id)
+        if attempt is None or attempt.status != "grading":
+            return
+        try:
+            exam = await db.get(Exam, attempt.exam_id)
+            if exam is None:
+                raise ExamError("试卷不存在。")
+
+            rows = (
+                await db.execute(
+                    select(ExamQuestion, Question)
+                    .join(
+                        Question, ExamQuestion.question_id == Question.id
+                    )
+                    .where(ExamQuestion.exam_id == attempt.exam_id)
+                    .order_by(ExamQuestion.order_index)
+                )
+            ).all()
+            answer_rows = (
+                await db.execute(
+                    select(Answer).where(Answer.attempt_id == attempt.id)
+                )
+            ).scalars().all()
+
+            report = await grade_attempt(
+                db, attempt, exam, rows, list(answer_rows)
+            )
+            attempt.status = "graded"
+            attempt.score = float(report["score"])
+            attempt.total_score = float(report["total_score"])
+            attempt.report_json = json.dumps(report, ensure_ascii=False)
+            await db.commit()
+            await _notify_graded(db, attempt, exam)
+        except Exception:
+            logger.exception("grading failed for attempt %s", attempt_id)
+            attempt.status = "grading_failed"
+            await db.commit()
+
+
+async def _notify_graded(db: AsyncSession, attempt: Attempt, exam: Exam) -> None:
+    """批改完成发一条通知，学生从通知点进去看报告。"""
+    from app.services.notifications import _create_once
+
+    # 直接从报告取分：attempt 上的 score 列在某些路径下可能还没刷新
+    score = 0.0
+    total = 0.0
+    warning = ""
+    try:
+        report = json.loads(attempt.report_json or "{}")
+        score = float(report.get("score") or 0)
+        total = float(report.get("total_score") or 0)
+        ungradable = int(report.get("ungradable_count") or 0)
+        if ungradable:
+            warning = f"（{ungradable} 道题缺少有效答案，未计入）"
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    await _create_once(
+        db,
+        user_id=attempt.user_id,
+        notification_type="exam_graded",
+        title="批改完成",
+        body=(
+            f"《{exam.title}》已批改：{score:.0f}/{total:.0f} 分{warning}。"
+            "点这里看逐题讲解和举一反三。"
+        ),
+        dedupe_key=f"graded:{attempt.id}",
+        link=f"/exams/{exam.id}/report/{attempt.id}",
+    )
     await db.commit()
     return report
 
@@ -479,9 +553,20 @@ async def get_report(db: AsyncSession, attempt_id: str) -> dict:
     attempt = await db.get(Attempt, attempt_id)
     if attempt is None:
         raise ExamError("作答记录不存在。")
+    if attempt.status == "grading":
+        return {"status": "grading", "attempt_id": attempt_id}
+    if attempt.status == "grading_failed":
+        return {
+            "status": "failed",
+            "attempt_id": attempt_id,
+            "message": "批改失败了。可以重新交卷再试一次。",
+        }
     if attempt.status != "graded":
-        raise ExamError("试卷还没有批改。")
-    return json.loads(attempt.report_json or "{}")
+        raise ExamError("试卷还没有交卷。")
+    report = json.loads(attempt.report_json or "{}")
+    report["status"] = "graded"
+    report["attempt_id"] = attempt_id
+    return report
 
 
 async def list_attempts(

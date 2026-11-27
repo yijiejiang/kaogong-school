@@ -18,6 +18,7 @@ def _notification_dict(item: Notification) -> dict:
         "type": item.type,
         "title": item.title,
         "body": item.body,
+        "link": item.link or "",
         "read": bool(item.read),
         "created_at": item.created_at.isoformat(),
     }
@@ -30,6 +31,7 @@ async def _create_once(
     title: str,
     body: str,
     dedupe_key: str,
+    link: str = "",
 ) -> bool:
     existing = (
         await db.execute(
@@ -45,6 +47,7 @@ async def _create_once(
             type=notification_type,
             title=title,
             body=body,
+            link=link,
             dedupe_key=dedupe_key,
         )
     )

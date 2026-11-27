@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, CheckCheck, Loader2 } from "lucide-react";
+import { Bell, CheckCheck, ChevronRight, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -17,6 +18,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const router = useRouter();
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -55,6 +57,15 @@ export function NotificationBell() {
   };
 
   const handleRead = async (item: NotificationItem) => {
+    // 有跳转链接的先走（比如批改完成 → 报告页），标已读顺手做掉
+    if (item.link) {
+      setOpen(false);
+      if (!item.read) {
+        void markNotificationRead(item.id).then(refresh).catch(() => {});
+      }
+      router.push(item.link);
+      return;
+    }
     if (item.read) return;
     setLoading(true);
     setError("");
@@ -146,6 +157,12 @@ export function NotificationBell() {
                   <p className="mt-1 text-[10px] leading-5 text-muted">
                     {item.body}
                   </p>
+                  {item.link && (
+                    <span className="mt-1 inline-flex items-center gap-0.5 text-[9px] font-medium text-[#3f5f7f]">
+                      查看详情
+                      <ChevronRight className="h-2.5 w-2.5" />
+                    </span>
+                  )}
                   <div className="mt-1 text-[9px] text-[#a59d90]">
                     {formatRelative(item.created_at) || "刚刚"}
                   </div>

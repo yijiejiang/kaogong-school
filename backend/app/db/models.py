@@ -458,6 +458,8 @@ class Notification(Base):
     type: Mapped[str] = mapped_column(String(32), index=True)
     title: Mapped[str] = mapped_column(String(255), default="")
     body: Mapped[str] = mapped_column(Text, default="")
+    # 点通知跳转的页面路径，比如 /exams/xxx/report/yyy；空表示不可跳转
+    link: Mapped[str] = mapped_column(String(512), default="")
     dedupe_key: Mapped[str] = mapped_column(
         String(160), unique=True, index=True
     )

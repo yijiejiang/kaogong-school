@@ -62,13 +62,32 @@ export default function ReportPage() {
   const [report, setReport] = useState<AttemptReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [grading, setGrading] = useState(false);
 
   useEffect(() => {
     let active = true;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    // 交卷后后台还在批改，这时接口返回 status=grading。
+    // 自动轮询，批完直接显示报告，不用手动刷新。
+    const load = async () => {
       try {
         const data = await fetchAttemptReport(params.attemptId);
-        if (active) setReport(data);
+        if (!active) return;
+        const status = (data as { status?: string }).status;
+        if (status === "grading") {
+          setGrading(true);
+          timer = setTimeout(load, 2000);
+          return;
+        }
+        if (status === "failed") {
+          setGrading(false);
+          setError((data as { message?: string }).message || "批改失败了");
+          setLoading(false);
+          return;
+        }
+        setGrading(false);
+        setReport(data);
       } catch (caught) {
         if (active) {
           setError(
@@ -78,17 +97,39 @@ export default function ReportPage() {
       } finally {
         if (active) setLoading(false);
       }
-    })();
+    };
+
+    void load();
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
     };
   }, [params.attemptId]);
 
-  if (loading) {
+  if (loading && !grading) {
     return (
       <div className="flex h-dvh items-center justify-center bg-[var(--background)] text-sm text-muted">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         正在加载批改报告…
+      </div>
+    );
+  }
+
+  if (grading) {
+    return (
+      <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-[var(--background)] px-6 text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-ink" />
+        <div className="text-sm font-medium text-ink">正在批改</div>
+        <p className="max-w-sm text-xs leading-6 text-muted">
+          老师正在逐题分析你的作答并生成讲解和举一反三，通常需要几十秒。
+          批完后会发通知，也可以留在这个页面等，会自动刷新。
+        </p>
+        <Link
+          href="/exams"
+          className="mt-2 rounded-xl border border-line bg-paper px-4 py-2 text-xs text-muted hover:text-ink"
+        >
+          先去别处，批完再来看
+        </Link>
       </div>
     );
   }

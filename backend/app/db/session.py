@@ -89,12 +89,17 @@ USAGE_COLUMNS = {
     "note": "TEXT NOT NULL DEFAULT ''",
 }
 
+NOTIFICATION_COLUMNS = {
+    "link": "VARCHAR(512) NOT NULL DEFAULT ''",
+}
+
 _TABLE_COLUMNS = {
     "chunks": CHUNK_COLUMNS,
     "knowledge_units": KNOWLEDGE_UNIT_COLUMNS,
     "skills": SKILL_COLUMNS,
     "questions": QUESTION_COLUMNS,
     "llm_usage": USAGE_COLUMNS,
+    "notifications": NOTIFICATION_COLUMNS,
 }
 
 

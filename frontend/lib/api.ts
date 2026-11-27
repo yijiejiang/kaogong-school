@@ -469,11 +469,17 @@ export async function saveAttemptAnswers(
 export async function submitAttempt(
   attemptId: string,
   answers: AnswerItem[],
-): Promise<AttemptReport> {
+): Promise<{ status: string; attempt_id: string }> {
   return request(`/api/attempts/${encodeURIComponent(attemptId)}/submit`, {
     method: "POST",
     body: JSON.stringify({ answers }),
   });
+}
+
+export async function fetchAttemptStatus(
+  attemptId: string,
+): Promise<{ attempt_id: string; status: string; report: AttemptReport | null }> {
+  return request(`/api/attempts/${encodeURIComponent(attemptId)}`);
 }
 
 export async function fetchAttemptReport(

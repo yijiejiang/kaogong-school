@@ -657,6 +657,7 @@ export type NotificationItem = {
   body: string;
   read: boolean;
   created_at: string;
+  link?: string;
 };
 
 export type NotificationList = {
