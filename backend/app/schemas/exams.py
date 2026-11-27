@@ -107,6 +107,7 @@ class AttemptReport(BaseModel):
     mastery_changes: list[MasteryChange] = Field(default_factory=list)
     skill_changes: list[dict] = Field(default_factory=list)
     error_book_added: int = 0
+    ungradable_count: int = 0
     summary: str = ""
 
 

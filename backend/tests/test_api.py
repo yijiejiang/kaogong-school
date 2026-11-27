@@ -1925,3 +1925,66 @@ def test_continue_with_skips_counselor() -> None:
 
     normal = create_root_agent(llm)
     assert normal.name == "counselor"
+
+
+def test_question_validation_rejects_bad_questions() -> None:
+    """方案任务一的验收用例：判不了分的题不能进可组卷池。"""
+    from app.services.question_validation import check_question
+
+    opts = '[{"key":"A","text":"甲"},{"key":"B","text":"乙"},{"key":"C","text":"丙"},{"key":"D","text":"丁"}]'
+
+    # 无答案单选
+    ok, reason = check_question(
+        qtype="single", stem="这是一道正常的题目吗？",
+        options_json=opts, answer_json="{}",
+    )
+    assert not ok and "答案缺失" in reason
+
+    # 答案 E 但只有 A-D
+    ok, reason = check_question(
+        qtype="single", stem="这是一道正常的题目吗？",
+        options_json=opts, answer_json='{"value":"E"}',
+    )
+    assert not ok and "不在选项中" in reason
+
+    # 选项不足（图表题没识别出来）
+    ok, reason = check_question(
+        qtype="single", stem="根据下图回答问题",
+        options_json='[{"key":"A","text":"甲"}]',
+        answer_json='{"value":"A"}',
+    )
+    assert not ok and "选项不足" in reason
+
+    # 合格
+    ok, _ = check_question(
+        qtype="single", stem="这是一道正常的题目吗？",
+        options_json=opts, answer_json='{"value":"B"}',
+    )
+    assert ok
+
+    # 主观题缺评分细则
+    ok, reason = check_question(
+        qtype="short", stem="请简述你的看法",
+        options_json="[]", answer_json='{"reference":"要点"}', rubric_json="[]",
+    )
+    assert not ok and "细则" in reason
+
+
+def test_unanswered_objective_is_not_correct() -> None:
+    """未作答不能判对——原来是 str('') == str('') 白送分。"""
+    from app.db.models import Question
+    from app.exams.grading import _objective_correct
+
+    q = Question(
+        id="q1", type="single", subject="行测", module="资料分析",
+        stem="题干", options_json='[{"key":"A","text":"甲"},{"key":"B","text":"乙"}]',
+        answer_json="{}",
+    )
+    # 题库里没有答案的题，学生空着不能算对
+    assert _objective_correct(q, "", None) is False
+    assert _objective_correct(q, "", "") is False
+
+    q.answer_json = '{"value":"A"}'
+    assert _objective_correct(q, "", "A") is False   # 空作答
+    assert _objective_correct(q, "A", "A") is True
+    assert _objective_correct(q, "B", "A") is False

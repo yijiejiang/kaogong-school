@@ -19,6 +19,7 @@ from app.db.session import SessionLocal
 from app.schemas.settings import LlmSettings
 from app.services.llm import normalize_model, role_model_config
 from app.services.material_classifier import detect_answer_key
+from app.services.question_validation import check_question
 
 logger = logging.getLogger(__name__)
 
@@ -409,17 +410,23 @@ def _build_prompt(questions: list[str], skill_names: list[str]) -> str:
         "「新闻类」「说理类」「科普类」「归纳概括」。每道题给 2–5 个标签，"
         "从具体题型到材料体裁都可以。\n"
         "只返回 JSON，不要 Markdown：\n"
-        '{"questions":[{"index":0,"is_question":true,"type":"single",'
+        '{"questions":[{"index":0,"verdict":"accepted","type":"single",'
         '"subject":"行测","module":"数量关系","stem":"...",'
         '"options":[{"key":"A","text":"..."}],"answer":"B",'
         '"explanation":"...","tags":["牛吃草","工程问题"],"difficulty":3}]}\n'
         "要求：\n"
-        "1. is_question 为 false 的内容直接跳过。\n"
+        "1. 每段必须给 verdict，三选一：\n"
+        "   accepted = 确认是完整题目；\n"
+        "   rejected = 明确不是题目（目录、页眉、纯解析、广告等）；\n"
+        "   uncertain = 像题但信息不全（缺题干、缺选项、图表没识别出来等）。\n"
         "2. stem 只保留题干，不要带选项；options 按 A/B/C/D 拆开；"
         "没有选项就留空数组，type 填 short。\n"
-        "3. answer 只填选项字母；不确定就留空。\n"
-        "4. tags 必须具体，不要只写「数量关系」这种大模块。\n"
-        "5. difficulty 为 1–5 的整数。\n"
+        "3. answer 只填选项字母。**看不出来就留空并在 verdict 填 uncertain**，"
+        "不要猜。答案空缺的题会被标为待审，但绝不进试卷。\n"
+        "4. 题干或选项不完整（例如依赖图表、共用材料未识别）时，"
+        "verdict 填 uncertain 并在 reason 说明缺什么。\n"
+        "5. tags 必须具体，不要只写「数量关系」这种大模块。\n"
+        "6. difficulty 为 1–5 的整数。\n"
         f"可选技能参考：{skill_line}\n\n"
         "内容：\n" + blocks
     )
@@ -484,7 +491,10 @@ def _fill_missing(
     items: list[dict],
     default_module: str = "",
 ) -> list[dict]:
-    """LLM 偶尔漏判个别块；带完整选项的块用规则补回来，别丢题。"""
+    """LLM 漏判的块用规则补回来，但排除它已明确拒绝的。
+
+    规则补出来的题没有答案，入库后一律进待审，不会进试卷。
+    """
     seen = {item.get("chunk_index") for item in items}
     extras: list[dict] = []
     for index, block in enumerate(blocks):
@@ -497,6 +507,8 @@ def _fill_missing(
         extras.append(
             {
                 "chunk_index": index,
+                "verdict": "uncertain",
+                "reason": "模型未返回，规则补齐",
                 "type": "single",
                 "subject": "行测",
                 "module": _guess_module(tags, default_module)[:64],
@@ -523,16 +535,36 @@ async def _call_llm(blocks: list[str], kwargs: dict) -> list[dict]:
 
     parsed: list[dict] = []
     for item in items:
-        if not isinstance(item, dict) or not item.get("is_question"):
+        if not isinstance(item, dict):
             continue
+
+        # 兼容旧格式：只给 is_question 时按真/假折算成 verdict
+        verdict = str(item.get("verdict") or "").strip().lower()
+        if verdict not in {"accepted", "rejected", "uncertain"}:
+            verdict = "accepted" if item.get("is_question") else "rejected"
+
         try:
             index = int(item.get("index"))
         except (TypeError, ValueError):
             continue
         if index < 0 or index >= len(blocks):
             continue
+
+        # 模型明确拒绝的块不再走规则兜底，避免"拒绝的又被捡回来"
+        if verdict == "rejected":
+            parsed.append({"chunk_index": index, "rejected": True})
+            continue
+
         stem = str(item.get("stem") or "").strip()
         if len(stem) < 10:
+            # 像题但认不全，交给待审而不是丢弃
+            parsed.append(
+                {
+                    "chunk_index": index,
+                    "verdict": "uncertain",
+                    "reason": str(item.get("reason") or "题干过短")[:200],
+                }
+            )
             continue
         options = []
         raw_options = item.get("options")
@@ -556,6 +588,8 @@ async def _call_llm(blocks: list[str], kwargs: dict) -> list[dict]:
         parsed.append(
             {
                 "chunk_index": index,
+                "verdict": verdict,
+                "reason": str(item.get("reason") or "")[:200],
                 "type": str(item.get("type") or ("single" if options else "short")),
                 "subject": str(item.get("subject") or "行测").strip()[:32],
                 "module": module[:64],
@@ -751,9 +785,15 @@ async def extract_questions(
             )
         ).scalars()
     }
+    review_reasons: dict[str, int] = {}
     for item in items:
         chunk: Chunk | None = item.get("chunk")
         if chunk is None:
+            continue
+        # 模型明确拒绝的块直接丢掉，不进库也不计入统计
+        if item.get("rejected"):
+            continue
+        if not item.get("stem"):
             continue
         fingerprint = _stem_fingerprint(item["stem"])
         if fingerprint in existing:
@@ -764,6 +804,21 @@ async def extract_questions(
             continue
         seen.add(qid)
         answer = item.get("answer") or ""
+
+        # 准入校验：判不了的题只能进待审，不能进可组卷池
+        options_json = json.dumps(item["options"], ensure_ascii=False)
+        answer_json = json.dumps(
+            {"value": answer.upper()} if answer else {}, ensure_ascii=False
+        )
+        ok, reason = check_question(
+            qtype=item["type"],
+            stem=item["stem"],
+            options_json=options_json,
+            answer_json=answer_json,
+        )
+        if not ok:
+            review_reasons[reason] = review_reasons.get(reason, 0) + 1
+        quality = "approved" if ok else "needs_review"
         db.add(
             Question(
                 id=qid,
@@ -773,16 +828,14 @@ async def extract_questions(
                 knowledge_point_id=chunk.knowledge_point_id,
                 knowledge_point_name=chunk.knowledge_point_name,
                 stem=item["stem"],
-                options_json=json.dumps(item["options"], ensure_ascii=False),
-                answer_json=json.dumps(
-                    {"value": answer.upper()} if answer else {}, ensure_ascii=False
-                ),
+                options_json=options_json,
+                answer_json=answer_json,
                 explanation=item.get("explanation", ""),
                 difficulty=item.get("difficulty", 3),
                 source="material",
                 material_id=material_id,
                 tags_json=_format_tags(item.get("tags") or []),
-                quality_status="approved",
+                quality_status=quality,
             )
         )
         created += 1
@@ -792,7 +845,13 @@ async def extract_questions(
             await db.commit()
 
     await db.commit()
-    return {"questions": created, "model": model_used, "warning": warning}
+    return {
+        "questions": created,
+        "model": model_used,
+        "warning": warning,
+        "needs_review": sum(review_reasons.values()),
+        "review_reasons": review_reasons,
+    }
 
 
 _tasks: set[asyncio.Task] = set()

@@ -115,11 +115,14 @@ async def generate_exam(
                 await db.rollback()
                 ai_warning = f"AI 原创题生成失败，已回退题库：{str(exc)[:160]}"
 
+    # 准入条件：必须是已通过的题，且答案不为空。
+    # 空答案的题判不了分，进了试卷只会白送分或污染掌握度。
     base_statement = select(Question).where(
         Question.subject == subject,
         Question.module == module,
         Question.quality_status == "approved",
         Question.type.in_(["single", "multiple", "short"]),
+        Question.answer_json.notin_(["{}", "", "null"]),
     )
     tag_filters = [tag.strip() for tag in (tags or []) if tag.strip()]
     if tag_filters:
@@ -137,7 +140,10 @@ async def generate_exam(
         questions = list(
             (
                 await db.execute(
-                    select(Question).where(Question.quality_status == "approved")
+                    select(Question).where(
+                        Question.quality_status == "approved",
+                        Question.answer_json.notin_(["{}", "", "null"]),
+                    )
                 )
             ).scalars()
         )

@@ -25,6 +25,7 @@ from app.db.models import (
 )
 from app.schemas.settings import LlmSettings
 from app.services.llm import normalize_model, role_model_config
+from app.services.question_validation import is_usable_answer
 from app.services.settings_service import load_llm_settings
 from app.services.skill_matching import load_skill_index, match_skills
 
@@ -160,13 +161,28 @@ def _response_text(response: Any) -> str:
 
 
 def _objective_correct(question: Question, response: Any, answer_value: Any) -> bool:
+    """判分前先确认这题有有效答案、学生也确实作答了。
+
+    原来的写法用 str 比较，未作答（空串）和缺失答案（空串）会被判为相等，
+    等于白送分——这类题还会污染掌握度。
+    """
+    if not is_usable_answer(question.answer_json, question.options_json):
+        return False
+    if response is None:
+        return False
+
     if question.type == "multiple":
-        if not isinstance(response, list):
+        if not isinstance(response, list) or not response:
             return False
-        return sorted(str(item) for item in response) == sorted(
-            str(item) for item in (answer_value or [])
-        )
-    return str(response or "") == str(answer_value or "")
+        picked = sorted(str(item).strip().upper() for item in response if str(item).strip())
+        expected = sorted(str(item) for item in (answer_value or []))
+        return bool(picked) and picked == expected
+
+    text = str(response).strip().upper()
+    if not text:
+        return False
+    expected = str(answer_value or "").strip().upper()
+    return bool(expected) and text == expected
 
 
 def _variants_for(question: Question) -> list[dict]:
@@ -311,6 +327,7 @@ async def grade_attempt(
     skill_before: dict[str, dict] = {}
 
     feedbacks: list[dict] = []
+    ungradable_count = 0
     score_total = 0.0
     correct_count = 0
     wrong_count = 0
@@ -355,15 +372,29 @@ async def grade_attempt(
             correct_answer = answer_data.get("reference", "")
         else:
             correct_answer = answer_data.get("value")
+            gradable = is_usable_answer(
+                question.answer_json, question.options_json
+            )
             is_correct = _objective_correct(question, response, correct_answer)
             score = link.score if is_correct else 0.0
-            comment = "回答正确。" if is_correct else "回答错误。"
+            if not gradable:
+                # 题库里遗留的坏题：不计入可评分满分，也不进错题本
+                comment = "这道题缺少有效答案，无法评分。"
+                ungradable_count += 1
+            elif not str(response or "").strip():
+                comment = "未作答。"
+            else:
+                comment = "回答正确。" if is_correct else "回答错误。"
 
         score_total += score
+        gradable_question = question.type == "short" or is_usable_answer(
+            question.answer_json, question.options_json
+        )
         if is_correct:
             correct_count += 1
-        else:
+        elif gradable_question:
             wrong_count += 1
+        # 无法评分的题既不算对也不算错，不进错题本、不污染掌握度
 
         matched_skills = match_skills(
             f"{question.stem}\n{question.explanation}",
@@ -411,6 +442,10 @@ async def grade_attempt(
             "skills": matched_skills,
         }
         feedbacks.append(feedback)
+
+        # 无法评分的题不参与掌握度统计，否则会凭空拉低水平
+        if not gradable_question:
+            continue
 
         kp_id = question.knowledge_point_id or question.module or "unclassified"
         kp_name = question.knowledge_point_name or question.module or "未分类"
@@ -560,6 +595,7 @@ async def grade_attempt(
         "mastery_changes": mastery_changes,
         "skill_changes": skill_changes,
         "error_book_added": wrong_count,
+        "ungradable_count": ungradable_count,
         "summary": (
             f"得分 {score_total:.1f}/{total_score:.1f}，"
             f"正确 {correct_count}/{len(rows)} 题。"
