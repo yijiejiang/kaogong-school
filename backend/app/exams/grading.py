@@ -599,6 +599,17 @@ async def grade_attempt(
         answer_row.is_correct = is_correct
         answer_row.feedback_json = json.dumps(feedback, ensure_ascii=False)
 
+    # 错题的讲解和变式交给老师模型现场生成：读题干、正确答案、学生作答和
+    # 对应技能，针对这一道题讲清楚。生成失败就保留前面按模块填的模板。
+    try:
+        await _enrich_with_teaching(db, feedbacks, rows, answer_rows, llm)
+    except BaseException:
+        # 生成是锦上添花，任何异常都不该让交卷失败
+        logger.exception("teaching enrich aborted")
+    logger.warning(
+        "teaching done: %s", sum(1 for f in feedbacks if f.get("teaching_model"))
+    )
+
     for kp_id, bucket in mastery_accum.items():
         row_id = f"{attempt.user_id}:{kp_id}"
         mastery = await db.get(Mastery, row_id)
@@ -701,3 +712,49 @@ async def grade_attempt(
             f"正确 {correct_count}/{len(rows)} 题。"
         ),
     }
+
+
+async def _enrich_with_teaching(
+    db: AsyncSession,
+    feedbacks: list[dict],
+    rows: list[tuple[ExamQuestion, Question]],
+    answer_rows: list[Answer],
+    llm: LlmSettings,
+) -> None:
+    """给错题补上针对本题的讲解和变式，逐个生成、单个失败不影响其它。"""
+    from app.exams.teaching import generate_teaching
+
+    question_by_id = {question.id: question for _, question in rows}
+    response_by_question = {
+        row.question_id: row.response_json for row in answer_rows
+    }
+
+    for feedback in feedbacks:
+        if feedback.get("is_correct"):
+            continue
+        if not feedback.get("skills") and not feedback.get("stem"):
+            continue
+        question = question_by_id.get(feedback.get("question_id"))
+        if question is None:
+            continue
+        try:
+            raw = json.loads(response_by_question.get(question.id) or "null")
+        except json.JSONDecodeError:
+            raw = None
+        student_answer = str(raw or "").strip()
+
+        try:
+            result = await generate_teaching(
+                question, feedback.get("skills") or [], student_answer, llm
+            )
+        except Exception:
+            logger.warning("teaching enrich failed", exc_info=True)
+            continue
+        if result is None:
+            continue
+        feedback["explanation"] = result.explanation
+        if result.variants:
+            feedback["variants"] = result.variants
+        if result.skill_usage:
+            feedback["skill_usage"] = result.skill_usage
+        feedback["teaching_model"] = result.model

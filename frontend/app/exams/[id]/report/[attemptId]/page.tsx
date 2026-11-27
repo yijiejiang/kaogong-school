@@ -425,6 +425,10 @@ function FeedbackCard({
         <SkillInsight skills={feedback.skills} />
       )}
 
+      {feedback.skill_usage && (
+        <SkillUsage text={feedback.skill_usage} />
+      )}
+
       {feedback.variants.length > 0 && (
         <Variants variants={feedback.variants} />
       )}
@@ -528,6 +532,19 @@ function SkillInsight({ skills }: { skills: FeedbackSkill[] }) {
       >
         打开技能地图
       </Link>
+    </div>
+  );
+}
+
+function SkillUsage({ text }: { text: string }) {
+  return (
+    <div className="mt-3 rounded-xl border border-[#d9e3ec] bg-[#f4f8fb] px-4 py-3">
+      <div className="text-[11px] font-semibold text-[#3f5f7a]">
+        这道题怎么用这个技能
+      </div>
+      <p className="mt-1.5 whitespace-pre-wrap text-xs leading-6 text-[#4a5561]">
+        {text}
+      </p>
     </div>
   );
 }

@@ -85,6 +85,9 @@ class QuestionFeedback(BaseModel):
     comment: str = ""
     variants: list[dict] = Field(default_factory=list)
     skills: list[dict] = Field(default_factory=list)
+    # 老师模型针对这道题生成的技能用法说明与所用模型
+    skill_usage: str = ""
+    teaching_model: str = ""
 
 
 class MasteryChange(BaseModel):

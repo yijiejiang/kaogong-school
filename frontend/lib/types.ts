@@ -487,6 +487,8 @@ export type QuestionFeedback = {
   comment: string;
   variants: FeedbackVariant[];
   skills: FeedbackSkill[];
+  skill_usage?: string;
+  teaching_model?: string;
 };
 
 export type MasteryChange = {
