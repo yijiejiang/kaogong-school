@@ -31,21 +31,114 @@ from app.services.skill_matching import load_skill_index, match_skills
 
 logger = logging.getLogger(__name__)
 
+# 通用变式按模块给。原来所有题都套资料分析的模板，导致逻辑判断题
+# 的「举一反三」变成「320÷800 求比重」这种毫不相干的内容。
+GENERIC_VARIANTS_BY_MODULE: dict[str, list[dict]] = {
+    "资料分析": [
+        {
+            "stem": "变式1：把题干中的数字换成另一组，先判断题型再列式。",
+            "answer": "先写公式，再代入计算。",
+            "explanation": "先判断是增长率、比重还是平均数，再选公式。",
+        },
+        {
+            "stem": "变式2：把问题从求现期改成求基期，注意公式变形。",
+            "answer": "基期=现期÷(1+增长率)。",
+            "explanation": "增长率题和基期题经常互换。",
+        },
+        {
+            "stem": "变式3：选项差距变小，练习保留更多有效数字。",
+            "answer": "先看选项差距，再决定截几位。",
+            "explanation": "差距小的时候不要过度截位。",
+        },
+    ],
+    "判断推理": [
+        {
+            "stem": "变式1：把结论和论据对调，判断还成不成立。",
+            "answer": "先找出论据和结论，再看推理是否必然。",
+            "explanation": "论证题的核心是论据能否推出结论。",
+        },
+        {
+            "stem": "变式2：把「加强」改成「削弱」，答案方向相反。",
+            "answer": "削弱题要找切断联系或另有他因的选项。",
+            "explanation": "同一个题干问法不同，正确选项完全不同。",
+        },
+        {
+            "stem": "变式3：加一个「除哪项外」的限制，注意选非题。",
+            "answer": "先标出题目要选「是」还是「非」。",
+            "explanation": "选非题最容易因为惯性选反。",
+        },
+    ],
+    "数量关系": [
+        {
+            "stem": "变式1：把已知和所求对调，用同一套关系反推。",
+            "answer": "先写出等量关系，再代数求解。",
+            "explanation": "行程、工程、利润类题都可以正反两问。",
+        },
+        {
+            "stem": "变式2：多加一个约束条件，练习设未知数的取舍。",
+            "answer": "未知数设得越少越好算。",
+            "explanation": "能设一个就别设两个。",
+        },
+        {
+            "stem": "变式3：把数字改成不容易整除的值，练估算和代入。",
+            "answer": "先看选项量级，能排除的先排除。",
+            "explanation": "考场上来不及精确算时，量级判断最省时间。",
+        },
+    ],
+    "言语理解与表达": [
+        {
+            "stem": "变式1：把「意在说明」改成「主要介绍了」，答案可能不同。",
+            "answer": "先看清问的是主旨还是细节。",
+            "explanation": "主旨题和细节题找的位置不一样。",
+        },
+        {
+            "stem": "变式2：把「不能推出」换成「可以推出」，注意反向。",
+            "answer": "先标出题目要选「是」还是「非」。",
+            "explanation": "选非题最容易选反。",
+        },
+        {
+            "stem": "变式3：把两个相近选项的差别挑出来，练辨析。",
+            "answer": "对比两个选项的限定词和范围。",
+            "explanation": "干扰项常常只改了一个限定词。",
+        },
+    ],
+    "常识判断": [
+        {
+            "stem": "变式1：把选项里的一处事实改错，练习逐项核对。",
+            "answer": "逐项判断，不要只看第一个像对的。",
+            "explanation": "常识题常常三个像对、一个明显错。",
+        },
+        {
+            "stem": "变式2：换个问法，从「正确的是」改成「错误的是」。",
+            "answer": "先标出题目要选「是」还是「非」。",
+            "explanation": "选非题最容易选反。",
+        },
+    ],
+    "申论": [
+        {
+            "stem": "变式1：把「概括」改成「分析」，答题层次不同。",
+            "answer": "概括只写要点，分析要写原因和影响。",
+            "explanation": "问法决定了答几个层次。",
+        },
+        {
+            "stem": "变式2：限定字数减半，练习提炼和取舍。",
+            "answer": "先保观点，再压缩例子。",
+            "explanation": "字数限制考的是信息密度。",
+        },
+    ],
+}
+
+# 兜底：模块也没有对应模板时用最通用的提示，绝不套别的学科
 GENERIC_VARIANTS = [
     {
-        "stem": "变式1：把题干中的数字换成另一组，先判断题型再列式。",
-        "answer": "先写公式，再代入计算。",
-        "explanation": "先判断是增长率、比重还是平均数，再选公式。",
+        "stem": "变式1：把题干里的关键条件换掉一个，看解法怎么变。",
+        "answer": "先确认这个条件在解题中起什么作用。",
+        "explanation": "改条件比改数字更能看出有没有真懂。",
     },
     {
-        "stem": "变式2：把问题从求现期改成求基期，注意公式变形。",
-        "answer": "基期=现期÷(1+增长率)。",
-        "explanation": "增长率题和基期题经常互换。",
-    },
-    {
-        "stem": "变式3：选项差距变小，练习保留更多有效数字。",
-        "answer": "先看选项差距，再决定截几位。",
-        "explanation": "差距小的时候不要过度截位。",
+        "stem": "变式2：把问题从「求什么」改成「已知什么反推什么」。",
+        "answer": "同一套关系正着用和反着用都要会。",
+        "explanation": "反推题考的是对公式的熟悉程度。",
     },
 ]
 
@@ -186,7 +279,14 @@ def _objective_correct(question: Question, response: Any, answer_value: Any) -> 
 
 
 def _variants_for(question: Question) -> list[dict]:
-    return VARIANT_TEMPLATES.get(question.knowledge_point_id, GENERIC_VARIANTS)
+    """优先用知识点专属模板，其次按模块给，最后才用最通用的。"""
+    specific = VARIANT_TEMPLATES.get(question.knowledge_point_id)
+    if specific:
+        return specific
+    module = (question.module or "").strip()
+    if module in GENERIC_VARIANTS_BY_MODULE:
+        return GENERIC_VARIANTS_BY_MODULE[module]
+    return GENERIC_VARIANTS
 
 
 def _grade_short_keywords(
