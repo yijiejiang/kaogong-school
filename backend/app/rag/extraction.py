@@ -813,6 +813,7 @@ async def extract_material_units(
             # 出处核对不上的降为待审，不当作可靠知识
             status="draft" if raw.get("evidence_ok", True) else "needs_review",
             evidence_json=json.dumps(raw.get("evidence") or [], ensure_ascii=False),
+            evidence_note=str(raw.get("evidence_reason") or "")[:200],
             extraction_model=raw.get("model", model_used),
         )
         db.add(row)

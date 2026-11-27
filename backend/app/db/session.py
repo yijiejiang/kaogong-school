@@ -60,6 +60,7 @@ KNOWLEDGE_UNIT_COLUMNS = {
     "proposed_knowledge_point": "VARCHAR(128) NOT NULL DEFAULT ''",
     "proposed_parent_id": "VARCHAR(64) NOT NULL DEFAULT ''",
     "proposed_reason": "TEXT NOT NULL DEFAULT ''",
+    "evidence_note": "TEXT NOT NULL DEFAULT ''",
 }
 
 SKILL_COLUMNS = {

@@ -150,6 +150,8 @@ class KnowledgeUnit(Base):
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     evidence_json: Mapped[str] = mapped_column(Text, default="[]")
+    # 出处核对结论：为空表示没问题，否则说明页码标错或找不到原文
+    evidence_note: Mapped[str] = mapped_column(Text, default="")
     extraction_model: Mapped[str] = mapped_column(String(128), default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
