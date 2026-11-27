@@ -672,6 +672,9 @@ async def extract_material_units(
     await db.execute(
         delete(KnowledgeUnit).where(KnowledgeUnit.material_id == material_id)
     )
+    # 立刻提交：后面是几分钟的 LLM 调用，不能让这个写事务一直占着写锁，
+    # 否则期间所有写操作（组卷、标已读）都会撞 503。
+    await db.commit()
     # 按范围覆盖全书：原来只取前 30 个「合格类型」的块，长资料后半段
     # 根本抽不到知识；而且 summary 类的讲义正文被排除在外。
     material = await db.get(Material, material_id)
