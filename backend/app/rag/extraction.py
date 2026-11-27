@@ -371,6 +371,7 @@ async def _llm_units(
     db: AsyncSession,
     chunks: list[Chunk],
     llm: LlmSettings,
+    all_page_text: dict[int, str] | None = None,
 ) -> list[dict]:
     if get_settings().mock_llm:
         raise ExtractionError("mock mode")
@@ -428,12 +429,15 @@ async def _llm_units(
     text = str(choice.message.content or "")
     raw_units = _parse_units(text)
 
-    # 本批所有块按页聚合，供出处核对
-    page_text: dict[int, str] = {}
-    for chunk in chunks:
-        if not chunk.page:
-            continue
-        page_text[chunk.page] = page_text.get(chunk.page, "") + "\n" + chunk.content
+    # 出处核对用的页文本：优先用整份资料的，拿不到才退回本批
+    page_text: dict[int, str] = dict(all_page_text or {})
+    if not page_text:
+        for chunk in chunks:
+            if not chunk.page:
+                continue
+            page_text[chunk.page] = (
+                page_text.get(chunk.page, "") + "\n" + chunk.content
+            )
 
     units: list[dict] = []
     for raw in raw_units:
@@ -453,8 +457,8 @@ async def _llm_units(
         if unit is None:
             continue
         # 核对出处：页码要在本批范围内，短句要真能在该页找到。
-        # 一页可能被切成多个块，所以按页聚合本批所有块的文本，
-        # 只用当前块会误判跨块的引用。
+        # 页码在整份资料范围内即可。一页常跨多个块，批边界切在页中间时
+        # 引用会落在本批之外，用批次范围会把正确的引用误判掉。
         verdict = check_evidence(
             raw.get("evidence"),
             page_text,
@@ -476,9 +480,18 @@ async def _llm_units_batched(
     units: list[dict] = []
     errors: list[str] = []
 
+    # 整份资料的页文本，供出处核对（一页可能跨多个批次的块）
+    all_page_text: dict[int, str] = {}
+    for chunk in chunks:
+        if not chunk.page:
+            continue
+        all_page_text[chunk.page] = (
+            all_page_text.get(chunk.page, "") + "\n" + chunk.content
+        )
+
     async def run(batch: list[Chunk]) -> None:
         try:
-            units.extend(await _llm_units(db, batch, llm))
+            units.extend(await _llm_units(db, batch, llm, all_page_text))
             return
         except Exception as exc:  # noqa: BLE001 - split and retry
             if len(batch) > 1:
