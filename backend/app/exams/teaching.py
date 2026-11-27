@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 GENERATE_MAX_TOKENS = 4000
 GENERATE_TIMEOUT = 120
+# 并发生成上限。再高容易触发供应商限流，重试反而更慢
+TEACHING_CONCURRENCY = 4
 
 
 @dataclass
@@ -184,7 +186,7 @@ async def generate_teaching(
 
     response = None
     # 批量批改时并发调用容易被限流，空响应多半是暂时性的，重试一次
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             response = await litellm.acompletion(**kwargs)
         except Exception:
@@ -192,8 +194,9 @@ async def generate_teaching(
             response = None
         if response is not None and getattr(response, "choices", None):
             break
-        if attempt == 0:
-            await asyncio.sleep(1.5)
+        if attempt < 2:
+            # 退避：并发时被限流，等一会儿再来
+            await asyncio.sleep(1.0 * (attempt + 1))
 
     choices = getattr(response, "choices", None) if response else None
     if not choices:

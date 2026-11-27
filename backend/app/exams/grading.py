@@ -721,14 +721,19 @@ async def _enrich_with_teaching(
     answer_rows: list[Answer],
     llm: LlmSettings,
 ) -> None:
-    """给错题补上针对本题的讲解和变式，逐个生成、单个失败不影响其它。"""
-    from app.exams.teaching import generate_teaching
+    """给错题补上针对本题的讲解和变式。
+
+    各题之间互不依赖，并发跑能把几十秒压到十几秒。并发数卡在 4：
+    再高容易触发供应商限流，反而因为重试变慢。单题失败不影响其它。
+    """
+    from app.exams.teaching import TEACHING_CONCURRENCY, generate_teaching
 
     question_by_id = {question.id: question for _, question in rows}
     response_by_question = {
         row.question_id: row.response_json for row in answer_rows
     }
 
+    targets: list[tuple[dict, object, str]] = []
     for feedback in feedbacks:
         if feedback.get("is_correct"):
             continue
@@ -741,20 +746,30 @@ async def _enrich_with_teaching(
             raw = json.loads(response_by_question.get(question.id) or "null")
         except json.JSONDecodeError:
             raw = None
-        student_answer = str(raw or "").strip()
+        targets.append((feedback, question, str(raw or "").strip()))
 
-        try:
-            result = await generate_teaching(
-                question, feedback.get("skills") or [], student_answer, llm
-            )
-        except Exception:
-            logger.warning("teaching enrich failed", exc_info=True)
-            continue
+    semaphore = asyncio.Semaphore(TEACHING_CONCURRENCY)
+
+    async def run(feedback: dict, question, student_answer: str) -> None:
+        async with semaphore:
+            try:
+                result = await generate_teaching(
+                    question, feedback.get("skills") or [], student_answer, llm
+                )
+            except Exception:
+                logger.warning("teaching enrich failed", exc_info=True)
+                return
         if result is None:
-            continue
+            return
+        # 落库时按 feedback 顺序写，这里只填字段，不涉及共享可变状态
         feedback["explanation"] = result.explanation
         if result.variants:
             feedback["variants"] = result.variants
         if result.skill_usage:
             feedback["skill_usage"] = result.skill_usage
         feedback["teaching_model"] = result.model
+
+    if targets:
+        await asyncio.gather(
+            *(run(fb, q, ans) for fb, q, ans in targets)
+        )
