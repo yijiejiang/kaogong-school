@@ -63,7 +63,22 @@ def check_evidence(
         if len(_normalize(quote)) < MIN_QUOTE_CHARS:
             return EvidenceCheck(False, "引用原文过短")
 
-        if _normalize(quote) not in _normalize(source):
-            return EvidenceCheck(False, f"引用原文在第 {page} 页找不到")
+        needle = _normalize(quote)
+        if needle in _normalize(source):
+            continue
+
+        # 页码可能标错了。原文确实在资料里，只是不在标的那一页，
+        # 这种情况值得保留，让审核的人顺手改页码即可。
+        elsewhere = [
+            num
+            for num, text in page_texts.items()
+            if num != page and needle in _normalize(text)
+        ]
+        if elsewhere:
+            return EvidenceCheck(
+                True, f"引用在第 {elsewhere[0]} 页，页码标注有误"
+            )
+
+        return EvidenceCheck(False, f"第 {page} 页找不到这句原文")
 
     return EvidenceCheck(True, "")

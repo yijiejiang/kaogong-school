@@ -2068,3 +2068,24 @@ def test_evidence_check_catches_fabrication() -> None:
     assert ok.ok
 
     assert not check_evidence(None, pages).ok
+
+
+def test_evidence_accepts_wrong_page_but_real_quote() -> None:
+    """页码标错但原文确实在资料里，应该保留而不是判死。"""
+    from app.rag.evidence import check_evidence
+
+    pages = {
+        3: "附录一公式速查表",
+        7: "截位直除时分母截前三位，分子按同比例截位，再直接相除。",
+    }
+    verdict = check_evidence(
+        {"page": 3, "quote": "分母截前三位"}, pages, allowed_pages={3, 7}
+    )
+    assert verdict.ok
+    assert "第 7 页" in verdict.reason
+
+    # 原文哪一页都找不到，才是真编造
+    bad = check_evidence(
+        {"page": 3, "quote": "这句原文整份资料里都没有"}, pages, allowed_pages={3, 7}
+    )
+    assert not bad.ok
