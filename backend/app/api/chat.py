@@ -37,6 +37,8 @@ class ChatRequest(BaseModel):
     user_id: str = "local-user"
     # 从报告页跳转时带上，让改卷老师知道学生在问哪一份卷子
     attempt_id: str | None = None
+    # 续接上一位老师：跳过辅导员分诊，直接由这位老师回答
+    continue_with: str | None = None
 
 
 def _sse(payload: dict) -> str:
@@ -306,7 +308,11 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
         await _ensure_session(
             session_service, user_id, session_id, req.message, req.attempt_id or ""
         )
-        root_agent = create_root_agent(llm, attempt_id=req.attempt_id or "")
+        root_agent = create_root_agent(
+            llm,
+            attempt_id=req.attempt_id or "",
+            continue_with=req.continue_with or "",
+        )
         runner = RootFirstRunner(
             agent=root_agent, app_name=APP_NAME, session_service=session_service
         )

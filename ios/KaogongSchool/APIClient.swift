@@ -165,7 +165,8 @@ actor APIClient {
     func streamChat(
         message: String,
         sessionId: String?,
-        attemptId: String? = nil
+        attemptId: String? = nil,
+        continueWith: String? = nil
     ) -> AsyncThrowingStream<ChatEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -181,6 +182,9 @@ actor APIClient {
                     ]
                     if let sessionId { payload["session_id"] = sessionId }
                     if let attemptId, !attemptId.isEmpty { payload["attempt_id"] = attemptId }
+                    if let continueWith, !continueWith.isEmpty {
+                        payload["continue_with"] = continueWith
+                    }
                     request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)

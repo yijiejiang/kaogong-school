@@ -619,6 +619,7 @@ export async function streamChat(
     session_id?: string | null;
     user_id?: string;
     attempt_id?: string | null;
+    continue_with?: string | null;
   },
   onEvent: (event: StreamEvent) => void,
   signal?: AbortSignal,

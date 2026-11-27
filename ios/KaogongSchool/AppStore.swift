@@ -74,6 +74,11 @@ final class AppStore: ObservableObject {
         send(text, attemptId: nil)
     }
 
+    /// 续接上一位老师：跳过辅导员分诊。
+    func send(_ text: String, continueWith: String) {
+        send(text, attemptId: nil, continueWith: continueWith)
+    }
+
     /// 报告页调用：切到对话、带上 attempt、并自动提问。
     func askAboutAttempt(_ text: String, attemptId: String) {
         activeAttemptId = attemptId
@@ -81,7 +86,7 @@ final class AppStore: ObservableObject {
         requestedTab = 0
     }
 
-    func send(_ text: String, attemptId: String?) {
+    func send(_ text: String, attemptId: String?, continueWith: String? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
         if let attemptId, !attemptId.isEmpty {
@@ -98,7 +103,8 @@ final class AppStore: ObservableObject {
                 let stream = await APIClient.shared.streamChat(
                     message: trimmed,
                     sessionId: activeSessionId,
-                    attemptId: attemptId ?? activeAttemptId
+                    attemptId: attemptId ?? activeAttemptId,
+                    continueWith: continueWith
                 )
                 for try await event in stream {
                     handle(event)

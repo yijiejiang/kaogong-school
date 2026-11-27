@@ -26,6 +26,7 @@ import {
   type StreamEvent,
 } from "@/lib/api";
 import type { ChatMessage, SessionSummary, SettingsBundle } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { useUserId } from "@/lib/user";
 
 const QUICK_PROMPTS = [
@@ -72,6 +73,8 @@ function ChatWorkspace() {
   const [settings, setSettings] = useState<SettingsBundle | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [headerAuthor, setHeaderAuthor] = useState("counselor");
+  // 点了「继续问这位老师」但还没发出去时，记住下一条消息要绕过辅导员
+  const [continueWith, setContinueWith] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -104,11 +107,28 @@ function ChatWorkspace() {
       });
   }, [userId]);
 
+  // 流式回答时每来一段内容 messages 都会变，若无条件滚到底，
+  // 用户往上翻历史会被一直拽回去，看不到上面的内容。
+  // 只在用户本来就贴着底部时才自动跟随。
+  const stickToBottomRef = useRef(true);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = distance < 120;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
   useEffect(() => {
     if (messages.length === 0) {
       scrollRef.current?.scrollTo({ top: 0 });
       return;
     }
+    if (!stickToBottomRef.current) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, streaming]);
 
@@ -158,20 +178,26 @@ function ChatWorkspace() {
   }, []);
 
   const send = useCallback(
-    async (raw?: string) => {
+    async (raw?: string, explicitTarget?: string) => {
       const text = (raw ?? input).trim();
       if (!text || streaming) return;
+      // 显式传入的优先；否则用「点了续问按钮」记下的意图
+      const target = explicitTarget ?? continueWith ?? undefined;
 
       setInput("");
       setError(null);
       setStreaming(true);
       resetActiveAssistant();
       pendingUiRef.current = {};
-      setHeaderAuthor("counselor");
+      setHeaderAuthor(target ?? "counselor");
+      // 自己发消息时总要看得到，哪怕之前翻到了上面
+      stickToBottomRef.current = true;
       setMessages((prev) => [
         ...prev,
         { id: `u_${Date.now()}`, role: "user", author: "user", content: text },
       ]);
+
+      setContinueWith(null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -183,6 +209,7 @@ function ChatWorkspace() {
             session_id: activeSessionId,
             user_id: userId,
             ...(attemptId ? { attempt_id: attemptId } : {}),
+            ...(target ? { continue_with: target } : {}),
           },
           (event: StreamEvent) => {
             switch (event.type) {
@@ -288,6 +315,7 @@ function ChatWorkspace() {
     [
       activeSessionId,
       attemptId,
+      continueWith,
       ensureAssistant,
       flushPendingUi,
       input,
@@ -373,6 +401,20 @@ function ChatWorkspace() {
     pendingUiRef.current = {};
   }, [streaming]);
 
+  const handleQuote = useCallback((text: string) => {
+    const quoted = text
+      .split("\n")
+      .filter((line) => line.trim())
+      .slice(0, 6)
+      .join("\n")
+      .slice(0, 400);
+    setInput((prev) =>
+      prev.trim()
+        ? `${prev}\n\n> ${quoted.replace(/\n/g, "\n> ")}\n\n`
+        : `> ${quoted.replace(/\n/g, "\n> ")}\n\n`,
+    );
+  }, []);
+
   const composerDisabled = settings ? !settings.server.llm_configured : false;
 
   const prompt = useCallback(
@@ -387,6 +429,18 @@ function ChatWorkspace() {
   );
 
   const hasStreamingMessage = messages.some((message) => message.streaming);
+
+  // 只有专家回答才需要「继续问」：默认本来就回辅导员，给它的回答加按钮没意义
+  const lastTeacher = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m.role !== "assistant" || !m.content) continue;
+      if (m.streaming) return null;
+      if (m.author === "counselor" || !m.author) return null;
+      return m.author;
+    }
+    return null;
+  })();
 
   return (
     <div className="flex h-dvh overflow-hidden bg-[var(--background)] text-ink">
@@ -418,11 +472,47 @@ function ChatWorkspace() {
               <Welcome onPrompt={prompt} />
             ) : (
               messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  onQuote={handleQuote}
+                />
               ))
             )}
 
             {streaming && !hasStreamingMessage && <Thinking />}
+
+            {lastTeacher && !streaming && (
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = input.trim();
+                    if (text) {
+                      setInput("");
+                      setContinueWith(null);
+                      void send(text, lastTeacher);
+                      return;
+                    }
+                    // 输入框还空着，就记下续接意图，等学生打完这句话自动带上
+                    setContinueWith(
+                      continueWith === lastTeacher ? null : lastTeacher,
+                    );
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] transition",
+                    continueWith === lastTeacher
+                      ? "border-[#3f5f7f] bg-[#e6edf5] text-[#3f5f7f]"
+                      : "border-line bg-paper text-muted hover:border-[#cfc4b5] hover:text-ink",
+                  )}
+                  title="跳过辅导员，直接由这位老师接着答"
+                >
+                  {continueWith === lastTeacher ? "将直接问" : "继续问"}
+                  {agentMeta(lastTeacher).name}
+                </button>
+              </div>
+            )}
+
             <div ref={bottomRef} />
           </div>
         </div>

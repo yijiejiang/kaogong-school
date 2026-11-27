@@ -1909,3 +1909,19 @@ def test_tool_prefers_active_attempt_from_state() -> None:
         assert captured["attempt_id"] == ""
     finally:
         exam_tools.latest_report = original
+
+
+def test_continue_with_skips_counselor() -> None:
+    """续接指定老师时，本轮直接由 TA 回答，不再经辅导员转接。"""
+    from app.agents.factory import create_root_agent
+    from app.schemas.settings import LlmSettings
+
+    llm = LlmSettings(api_base="https://example.com/v1", api_key="k", default_model="t")
+    direct = create_root_agent(llm, continue_with="grader")
+    assert direct.name == "grader"
+
+    unknown = create_root_agent(llm, continue_with="nobody")
+    assert unknown.name == "counselor"
+
+    normal = create_root_agent(llm)
+    assert normal.name == "counselor"

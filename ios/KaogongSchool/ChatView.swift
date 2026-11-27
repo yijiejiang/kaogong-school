@@ -171,6 +171,20 @@ struct ChatView: View {
         }
     }
 
+    @State private var stickToBottom = true
+
+    /// 最近一条专家回答的作者。辅导员默认就是入口，不需要续问按钮。
+    private var lastSpecialist: String? {
+        for message in store.messages.reversed() {
+            guard message.role == .assistant, !message.content.isEmpty else { continue }
+            if message.streaming { return nil }
+            let author = message.author
+            if author == "counselor" || author.isEmpty { return nil }
+            return author
+        }
+        return nil
+    }
+
     private var messages: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -182,15 +196,45 @@ struct ChatView: View {
                         MessageRow(message: message, speech: speech)
                             .id(message.id)
                     }
+                    if let teacher = lastSpecialist {
+                        HStack {
+                            Spacer()
+                            Button {
+                                store.send("继续请教", continueWith: teacher)
+                            } label: {
+                                Text("继续问\(AppStore.agentName(teacher))")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Theme.paper)
+                                    .foregroundStyle(Theme.muted)
+                                    .overlay(Capsule().stroke(Theme.line))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            Spacer()
+                        }
+                    }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 14)
             }
+            // 用户手指一碰就停止自动跟随，这样往上翻历史不会被拽回来
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        if value.translation.height > 0 { stickToBottom = false }
+                    }
+            )
             .onChange(of: store.messages.count) {
+                stickToBottom = true
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            // 流式回答时只在用户本来就贴着底部时才跟随，
+            // 否则往上翻历史会被一直拽回来
             .onChange(of: store.messages.last?.content.count) {
+                guard stickToBottom else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }

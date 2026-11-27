@@ -1,6 +1,6 @@
 "use client";
 
-import { Volume2, VolumeX } from "lucide-react";
+import { Check, Copy, Quote, Volume2, VolumeX } from "lucide-react";
 import { useState } from "react";
 
 import { agentMeta } from "@/lib/agents";
@@ -10,8 +10,26 @@ import { ExamCard } from "./ExamCard";
 import { Markdown } from "./Markdown";
 import { MaterialCard } from "./MaterialCard";
 
-export function MessageBubble({ message }: { message: ChatMessage }) {
+export function MessageBubble({
+  message,
+  onQuote,
+}: {
+  message: ChatMessage;
+  onQuote?: (text: string) => void;
+}) {
   const [speaking, setSpeaking] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // 非安全上下文（http）下 clipboard 不可用，退回到选中复制
+      setCopied(false);
+    }
+  };
 
   if (message.role === "system") {
     return (
@@ -69,19 +87,45 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
             <span className="text-accent">正在输入…</span>
           )}
           {!message.streaming && message.content && (
-            <button
-              type="button"
-              onClick={toggleSpeak}
-              title={speaking ? "停止朗读" : "朗读这条回答"}
-              className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] text-muted transition hover:bg-[#f1ece2] hover:text-ink"
-            >
-              {speaking ? (
-                <VolumeX className="h-3 w-3" />
-              ) : (
-                <Volume2 className="h-3 w-3" />
+            <>
+              <button
+                type="button"
+                onClick={toggleSpeak}
+                title={speaking ? "停止朗读" : "朗读这条回答"}
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] text-muted transition hover:bg-[#f1ece2] hover:text-ink"
+              >
+                {speaking ? (
+                  <VolumeX className="h-3 w-3" />
+                ) : (
+                  <Volume2 className="h-3 w-3" />
+                )}
+                朗读
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyText()}
+                title="复制整条回答"
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] text-muted transition hover:bg-[#f1ece2] hover:text-ink"
+              >
+                {copied ? (
+                  <Check className="h-3 w-3 text-[#2f5d50]" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+                {copied ? "已复制" : "复制"}
+              </button>
+              {onQuote && (
+                <button
+                  type="button"
+                  onClick={() => onQuote(message.content)}
+                  title="引用这条回答，在后面接着问"
+                  className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] text-muted transition hover:bg-[#f1ece2] hover:text-ink"
+                >
+                  <Quote className="h-3 w-3" />
+                  引用
+                </button>
               )}
-              朗读
-            </button>
+            </>
           )}
         </div>
 

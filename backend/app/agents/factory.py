@@ -52,7 +52,11 @@ def _with_active_attempt(attempt_id: str):
     return before_agent
 
 
-def create_root_agent(llm: LlmSettings, attempt_id: str = "") -> Agent:
+def create_root_agent(
+    llm: LlmSettings,
+    attempt_id: str = "",
+    continue_with: str = "",
+) -> Agent:
     output_discipline = (
         "\n\n输出纪律：只输出给学生看的最终回答，不要输出思考过程、草稿、计划、"
         "英文分析、工具调用说明，也不要复述系统规则。直接给结论和可执行建议。"
@@ -305,4 +309,23 @@ def create_root_agent(llm: LlmSettings, attempt_id: str = "") -> Agent:
         counselor,
     ):
         agent.instruction = f"{agent.instruction}{output_discipline}{_today_note()}"
+
+    # 续接上一位老师：直接把 TA 当作本轮入口，跳过辅导员分诊。
+    # 学生说「继续问改卷老师」时不用再走一次转接。
+    if continue_with:
+        pick = {
+            "supervisor": supervisor,
+            "examiner": examiner,
+            "grader": grader,
+            "tutor": tutor,
+            "collector": collector,
+            "organizer": organizer,
+        }.get(continue_with)
+        if pick is not None:
+            pick.instruction = (
+                f"{pick.instruction}\n\n本轮由学生直接点名续问，"
+                "延续上一轮的上下文继续回答，不要转给其他老师。"
+            )
+            return pick
+
     return counselor
