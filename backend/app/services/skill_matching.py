@@ -75,7 +75,9 @@ def match_skills(
                 score += len(token)
         if score:
             scored.append((score, skill))
-    scored.sort(key=lambda item: item[0], reverse=True)
+    scored.sort(
+        key=lambda item: (bool(item[1].get("steps")), item[0]), reverse=True
+    )
     if scored:
         return [skill for _, skill in scored[:limit]]
 
@@ -121,7 +123,15 @@ def _match_across(
                 score += _partial_score(token, text)
             if score >= 3:
                 scored.append((score, skill))
-    scored.sort(key=lambda item: item[0], reverse=True)
+    # 有步骤的优先：像「加强削弱（3-4 题，重点）」这种只是分类标签，
+    # 没有任何可执行步骤，拿它当技能依据讲不出东西来
+    scored.sort(
+        key=lambda item: (
+            bool(item[1].get("steps")),
+            item[0],
+        ),
+        reverse=True,
+    )
     if scored:
         return [skill for _, skill in scored[:limit]]
     return _module_fallback(index)
@@ -134,6 +144,7 @@ def _module_fallback(index: dict[str, list[dict]]) -> list[dict]:
     但题干里不会出现「定义判断」四个字。这时给模块级通用方法，
     比留空有用，也比随便挑一个具体技巧更不容易误导。
     """
+    candidates: list[dict] = []
     for skills in index.values():
         for skill in skills:
             module = str(skill.get("module") or "").strip()
@@ -144,8 +155,12 @@ def _module_fallback(index: dict[str, list[dict]]) -> list[dict]:
                 cue in name
                 for cue in ("总体", "流程", "通用", "解题", "考点定位", "常见题型")
             ):
-                return [skill]
-    return []
+                candidates.append(skill)
+    if not candidates:
+        return []
+    # 优先给有步骤的：只有名字没有步骤的「分类标签」讲不出具体做法
+    candidates.sort(key=lambda item: len(item.get("steps") or []), reverse=True)
+    return [candidates[0]]
 
 
 def _partial_score(token: str, text: str) -> int:
