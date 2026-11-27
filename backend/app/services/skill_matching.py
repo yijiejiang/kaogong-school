@@ -81,10 +81,12 @@ def match_skills(
     if scored:
         return [skill for _, skill in scored[:limit]]
 
-    # 一个信号都没命中时，贸然拿「置信度最高」的那个会给出完全不相关的技能
-    # （例如逻辑判断题匹配到图形推理的「样式规律」）。宁可空着，让前端
-    # 显示「暂无对应技能」，也不要给出误导性的错配。
-    return []
+    # 主路径没命中不代表这题没有对应技能：知识点 id 为 xingce-panduan 时
+    # 候选里有 27 个技能，但可能一个都对不上题干，而别的知识点下恰好有
+    # 贴切的（纸盒折叠 → 立体类图形推理）。再按模块找一次。
+    return _match_across(
+        text, index, limit, _modules_of(index, knowledge_point_id)
+    )
 
 
 def _match_across(
@@ -121,7 +123,10 @@ def _match_across(
                 # 措辞常对不上：技能写「增长了百分之几」，题干写「同比增长率」。
                 # 退一步用二元片段覆盖，命中够多也算相关。
                 score += _partial_score(token, text)
-            if score >= 3:
+            # 同模块内 2 分也接受：「纸盒折叠」和「图形推理」只共享「图形」，
+            # 但在这个模块里已经是有意义的信号了。跨模块仍要求 3 分以上，
+            # 避免「增长」「条件」这类高频词乱配。
+            if score >= (2 if same_modules and module in same_modules else 3):
                 scored.append((score, skill))
     # 有步骤的优先：像「加强削弱（3-4 题，重点）」这种只是分类标签，
     # 没有任何可执行步骤，拿它当技能依据讲不出东西来
