@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Job, Material, Question
+from app.db.models import ExtractScope, Job, Material, Question
 from app.db.session import get_db
 from app.services.question_extraction import start_question_extraction
 
@@ -219,6 +219,63 @@ async def extract_job_status(
         "error": job.error,
         "result": result,
     }
+
+
+@router.get("/extract/scopes/{material_id}")
+async def list_extract_scopes(
+    material_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    kind: str = "question",
+) -> dict:
+    """查看一份资料的抽取范围清单：哪一段抽到了、哪一段失败、哪一段为空。"""
+    rows = list(
+        (
+            await db.execute(
+                select(ExtractScope)
+                .where(
+                    ExtractScope.material_id == material_id,
+                    ExtractScope.kind == kind,
+                )
+                .order_by(ExtractScope.order_index)
+            )
+        ).scalars()
+    )
+    return {
+        "total": len(rows),
+        "scopes": [
+            {
+                "id": row.id,
+                "scope_key": row.scope_key,
+                "title": row.title,
+                "page_start": row.page_start,
+                "page_end": row.page_end,
+                "status": row.status,
+                "attempts": row.attempts,
+                "found": row.found,
+                "error": row.error,
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.post("/extract/scopes/{scope_id}/retry")
+async def retry_extract_scope(
+    scope_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """只重跑一个范围，不影响其它已完成的段落。"""
+    scope = await db.get(ExtractScope, scope_id)
+    if scope is None:
+        raise HTTPException(status_code=404, detail="范围不存在。")
+    scope.status = "pending"
+    scope.error = ""
+    scope.attempts += 1
+    await db.commit()
+    job = await start_question_extraction(
+        db, scope.material_id, only_scope=scope.id
+    )
+    return {"status": "accepted", "job_id": job.id, "scope": scope.scope_key}
 
 
 @router.get("/stats")

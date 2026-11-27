@@ -294,6 +294,40 @@ class Attempt(Base):
     )
 
 
+class ExtractScope(Base):
+    """一份资料的一次抽取，按范围拆开逐个处理。
+
+    长资料不能整份塞给模型，也不能只取前若干块。这里按章节或页段切成
+    互不重叠的范围，每段独立记录状态和尝试次数，失败只重跑这一段。
+    """
+
+    __tablename__ = "extract_scopes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    material_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("materials.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), default="question", index=True)
+    # 文档版本：资料重新入库后旧范围的键不再命中，避免重复写入
+    doc_version: Mapped[str] = mapped_column(String(64), default="", index=True)
+    scope_key: Mapped[str] = mapped_column(String(128), default="")
+    title: Mapped[str] = mapped_column(String(255), default="")
+    page_start: Mapped[int] = mapped_column(Integer, default=0)
+    page_end: Mapped[int] = mapped_column(Integer, default=0)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    found: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(Text, default="")
+    result_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class Answer(Base):
     __tablename__ = "answers"
 

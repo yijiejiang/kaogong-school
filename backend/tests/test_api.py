@@ -1988,3 +1988,44 @@ def test_unanswered_objective_is_not_correct() -> None:
     assert _objective_correct(q, "", "A") is False   # 空作答
     assert _objective_correct(q, "A", "A") is True
     assert _objective_correct(q, "B", "A") is False
+
+
+def test_scope_planning_covers_every_chunk() -> None:
+    """范围清单必须覆盖全书，不能像原来那样只取前若干块。"""
+    from app.db.models import Chunk
+    from app.services.extract_scopes import plan_scopes
+
+    chunks = [
+        Chunk(
+            id=f"c{i}", material_id="m1", chunk_index=i,
+            content="x" * 400, content_hash="",
+            heading_path=f"章节{i // 3}", page=i + 1,
+        )
+        for i in range(30)
+    ]
+    plans = plan_scopes(chunks)
+    covered = {cid for plan in plans for cid in plan.chunk_ids}
+    assert len(covered) == 30, "每个分块都要被某个范围覆盖"
+    assert len(plans) >= 1
+    # 范围之间不重叠
+    assert sum(len(p.chunk_ids) for p in plans) == 30
+
+
+def test_scope_splits_when_section_too_large() -> None:
+    """章节过长时要按页段继续切，不能生成一个塞不进模型的范围。"""
+    from app.db.models import Chunk
+    from app.services.extract_scopes import SCOPE_CHARS, plan_scopes
+
+    size = SCOPE_CHARS // 2
+    chunks = [
+        Chunk(
+            id=f"c{i}", material_id="m1", chunk_index=i,
+            content="y" * size, content_hash="",
+            heading_path="同一个大章节", page=i + 1,
+        )
+        for i in range(6)
+    ]
+    plans = plan_scopes(chunks)
+    assert len(plans) >= 3
+    for plan in plans:
+        assert len(plan.chunk_ids) * size <= SCOPE_CHARS + size

@@ -14,9 +14,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import Chunk, Job, Question, Skill
+from app.db.models import Chunk, Job, Material, Question, Skill
 from app.db.session import SessionLocal
 from app.schemas.settings import LlmSettings
+from app.services.extract_scopes import build_scopes, scope_chunk_ids
 from app.services.llm import normalize_model, role_model_config
 from app.services.material_classifier import detect_answer_key
 from app.services.question_validation import check_question
@@ -670,6 +671,7 @@ async def extract_questions(
     llm: LlmSettings,
     progress: ProgressCallback | None = None,
     force: bool = False,
+    only_scope: str = "",
 ) -> dict:
     """Scan a material's chunks, extract questions and tag them.
 
@@ -679,18 +681,47 @@ async def extract_questions(
     Args:
         force: 判定为解析篇时是否仍要抽取（页面上「仍要识别」用）。
     """
-    await db.execute(delete(Question).where(Question.material_id == material_id))
+    material = await db.get(Material, material_id)
+    if material is None:
+        await db.commit()
+        return {"questions": 0, "model": "", "warning": ""}
 
-    chunks = list(
-        (
-            await db.execute(
-                select(Chunk)
-                .where(Chunk.material_id == material_id)
-                .order_by(Chunk.chunk_index)
-                .limit(MAX_SCAN_CHUNKS)
-            )
-        ).scalars()
-    )
+    if not only_scope:
+        await db.execute(
+            delete(Question).where(Question.material_id == material_id)
+        )
+
+    # 按范围清单处理：长资料不再只取前若干块，全书都会被覆盖到
+    scope_rows = await build_scopes(db, material, kind="question")
+    if only_scope:
+        # 重跑单段：其余范围保持原样，不清空已抽到的题
+        scope_rows = [r for r in scope_rows if r.id == only_scope]
+    if scope_rows:
+        by_id = {
+            row.id: row
+            for row in (
+                await db.execute(
+                    select(Chunk).where(Chunk.material_id == material_id)
+                )
+            ).scalars()
+        }
+        ordered_ids: list[str] = []
+        for scope in sorted(scope_rows, key=lambda r: r.order_index):
+            for cid in scope_chunk_ids(scope):
+                if cid in by_id and cid not in ordered_ids:
+                    ordered_ids.append(cid)
+        chunks = [by_id[cid] for cid in ordered_ids]
+    else:
+        chunks = list(
+            (
+                await db.execute(
+                    select(Chunk)
+                    .where(Chunk.material_id == material_id)
+                    .order_by(Chunk.chunk_index)
+                    .limit(MAX_SCAN_CHUNKS)
+                )
+            ).scalars()
+        )
     if not chunks:
         await db.commit()
         return {"questions": 0, "model": "", "warning": ""}
@@ -773,6 +804,26 @@ async def extract_questions(
 
     if llm_failed:
         warning = f"{llm_failed}/{len(batches)} 批 LLM 识别失败，已用规则补齐。"
+
+    # 把结果按范围归档，方便看出哪一段没抽到题、哪一段失败过
+    if scope_rows:
+        chunk_to_scope = {}
+        for scope in scope_rows:
+            for cid in scope_chunk_ids(scope):
+                chunk_to_scope[cid] = scope
+        counts: dict[str, int] = {}
+        for item in items:
+            chunk = item.get("chunk")
+            scope = chunk_to_scope.get(chunk.id) if chunk is not None else None
+            if scope is None:
+                continue
+            counts[scope.id] = counts.get(scope.id, 0) + 1
+        for scope in scope_rows:
+            scope.status = "done" if counts.get(scope.id) else "empty"
+            scope.found = counts.get(scope.id, 0)
+            if llm_failed and not counts.get(scope.id):
+                scope.status = "partial"
+        await db.commit()
 
     created = 0
     seen: set[str] = set()
@@ -861,6 +912,7 @@ async def start_question_extraction(
     db: AsyncSession,
     material_id: str,
     force: bool = False,
+    only_scope: str = "",
 ) -> Job:
     """建立一个抽题任务并在后台执行，接口可以立即返回。"""
     job = Job(
@@ -869,7 +921,12 @@ async def start_question_extraction(
         status="pending",
         message="排队中",
         payload_json=json.dumps(
-            {"material_id": material_id, "force": force}, ensure_ascii=False
+            {
+                "material_id": material_id,
+                "force": force,
+                "only_scope": only_scope,
+            },
+            ensure_ascii=False,
         ),
     )
     db.add(job)
@@ -893,6 +950,7 @@ async def run_question_extraction_job(job_id: str) -> None:
             payload = {}
         material_id = str(payload.get("material_id") or "")
         force = bool(payload.get("force"))
+        only_scope = str(payload.get("only_scope") or "")
 
         job.status = "processing"
         job.progress = 0.0
@@ -909,7 +967,12 @@ async def run_question_extraction_job(job_id: str) -> None:
 
             llm = await load_llm_settings(db)
             result = await extract_questions(
-                db, material_id, llm, progress=progress, force=force
+                db,
+                material_id,
+                llm,
+                progress=progress,
+                force=force,
+                only_scope=only_scope,
             )
             skipped = result.get("skipped")
             job.status = "done"
