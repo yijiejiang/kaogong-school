@@ -427,6 +427,14 @@ async def _llm_units(
         raise ExtractionError("LLM output truncated by token limit")
     text = str(choice.message.content or "")
     raw_units = _parse_units(text)
+
+    # 本批所有块按页聚合，供出处核对
+    page_text: dict[int, str] = {}
+    for chunk in chunks:
+        if not chunk.page:
+            continue
+        page_text[chunk.page] = page_text.get(chunk.page, "") + "\n" + chunk.content
+
     units: list[dict] = []
     for raw in raw_units:
         try:
@@ -444,13 +452,13 @@ async def _llm_units(
         )
         if unit is None:
             continue
-        # 核对出处：页码要在本批范围内，短句要真能在该页找到
-        chunk = chunks[index]
-        sources = {chunk.page: chunk.content} if chunk.page else {}
+        # 核对出处：页码要在本批范围内，短句要真能在该页找到。
+        # 一页可能被切成多个块，所以按页聚合本批所有块的文本，
+        # 只用当前块会误判跨块的引用。
         verdict = check_evidence(
             raw.get("evidence"),
-            sources,
-            allowed_pages=set(sources) if sources else None,
+            page_text,
+            allowed_pages=set(page_text) if page_text else None,
         )
         unit["evidence_ok"] = verdict.ok
         unit["evidence_reason"] = verdict.reason
