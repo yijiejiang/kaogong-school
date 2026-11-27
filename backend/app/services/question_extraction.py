@@ -990,3 +990,58 @@ async def run_question_extraction_job(job_id: str) -> None:
             job.error = str(exc)[:500]
             job.message = "识别失败"
             await db.commit()
+
+
+async def start_knowledge_extraction(db: AsyncSession, material_id: str) -> Job:
+    """知识抽取排成后台任务。
+
+    按章节覆盖全书后要跑很多批，同步接口会被浏览器超时掐断。
+    """
+    job = Job(
+        id=uuid.uuid4().hex,
+        type="knowledge_extract",
+        status="pending",
+        message="排队中",
+        payload_json=json.dumps({"material_id": material_id}, ensure_ascii=False),
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    task = asyncio.create_task(run_knowledge_extraction_job(job.id))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return job
+
+
+async def run_knowledge_extraction_job(job_id: str) -> None:
+    async with SessionLocal() as db:
+        job = await db.get(Job, job_id)
+        if job is None:
+            return
+        try:
+            payload = json.loads(job.payload_json or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        material_id = str(payload.get("material_id") or "")
+
+        job.status = "processing"
+        job.message = "抽取知识单元"
+        await db.commit()
+        try:
+            from app.rag.extraction import extract_material_units
+            from app.services.settings_service import load_llm_settings
+
+            llm = await load_llm_settings(db)
+            result = await extract_material_units(db, material_id, llm)
+            job.status = "done"
+            job.progress = 1.0
+            job.message = f"抽取完成：{result.get('units', 0)} 个知识单元"
+            job.result_json = json.dumps(result, ensure_ascii=False)
+            await db.commit()
+        except Exception as exc:
+            logger.exception("knowledge extraction job failed")
+            job.status = "failed"
+            job.error = str(exc)[:500]
+            job.message = "抽取失败"
+            await db.commit()

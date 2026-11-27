@@ -64,6 +64,8 @@ class Chunk(Base):
     time_start: Mapped[float | None] = mapped_column(Float, nullable=True)
     time_end: Mapped[float | None] = mapped_column(Float, nullable=True)
     frame_path: Mapped[str] = mapped_column(String(512), default="")
+    # 扫描页/图表页的原页图片，供需要视觉识别的场景回看
+    page_image_path: Mapped[str] = mapped_column(String(512), default="")
     heading: Mapped[str] = mapped_column(String(255), default="")
     heading_path: Mapped[str] = mapped_column(String(512), default="")
     chunk_type: Mapped[str] = mapped_column(String(16), default="summary", index=True)

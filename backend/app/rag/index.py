@@ -31,6 +31,7 @@ class TaggedChunk:
     time_start: float | None = None
     time_end: float | None = None
     frame_path: str = ""
+    page_image_path: str = ""
 
 
 async def replace_chunks(
@@ -66,6 +67,7 @@ async def replace_chunks(
                 time_start=chunk.time_start,
                 time_end=chunk.time_end,
                 frame_path=chunk.frame_path,
+                page_image_path=chunk.page_image_path,
                 heading=chunk.heading,
                 heading_path=chunk.heading_path,
                 chunk_type=chunk.tag.chunk_type,

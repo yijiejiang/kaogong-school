@@ -82,6 +82,7 @@ class RawChunk:
     time_start: float | None = None
     time_end: float | None = None
     frame_path: str = ""
+    page_image_path: str = ""
 
 
 def resolve_upload_path(relative: str) -> Path:
@@ -321,6 +322,31 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
             if parsed.title.strip():
                 material.title = parsed.title.strip()[:255]
 
+            # 稀疏页（扫描页/纯图表页）渲染成图片，留着原页引用。
+            # 这样后续需要视觉识别时能直接拿到那一页，不用重解析。
+            page_images: dict[int, str] = {}
+            rendered_count = 0
+            if material.kind == "file" and parsed.pages:
+                from app.rag.page_images import find_sparse_pages, render_pages
+
+                sparse = find_sparse_pages(parsed.pages)
+                if sparse:
+                    src = resolve_upload_path(material.file_path)
+                    if src.suffix.lower() == ".pdf" and src.exists():
+                        out_dir = UPLOAD_DIR / material.id / "pages"
+                        try:
+                            rendered = await asyncio.to_thread(
+                                render_pages, src, sparse, out_dir
+                            )
+                            for image in rendered:
+                                rel = image.path.relative_to(UPLOAD_DIR)
+                                page_images[image.page] = str(rel)
+                            rendered_count = len(rendered)
+                        except Exception:
+                            logger.warning(
+                                "render sparse pages failed", exc_info=True
+                            )
+
             job.progress = 0.3
             job.message = "切分内容"
             await db.commit()
@@ -350,6 +376,7 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                                 heading=item.heading,
                                 heading_path=item.heading_path,
                                 page=page_number,
+                                page_image_path=page_images.get(page_number, ""),
                             )
                         )
             else:
@@ -403,6 +430,7 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                     time_start=item.time_start,
                     time_end=item.time_end,
                     frame_path=item.frame_path,
+                    page_image_path=item.page_image_path,
                     tag=tag_text_multi(
                         item.content,
                         prepared,
@@ -483,6 +511,11 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                 + (
                     f" 识别 {question_result['questions']} 道题目。"
                     if question_result.get("questions")
+                    else ""
+                )
+                + (
+                    f" {rendered_count} 页已保留原页图片。"
+                    if rendered_count
                     else ""
                 )
                 + (" " + " ".join(warnings) if warnings else "")

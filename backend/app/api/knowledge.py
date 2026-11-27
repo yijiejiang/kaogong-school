@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    Job,
     KnowledgePoint,
     KnowledgeUnit,
     Material,
@@ -18,7 +19,6 @@ from app.db.models import (
     utcnow,
 )
 from app.db.session import get_db
-from app.rag.extraction import extract_material_units
 from app.rag.index import get_knowledge_card, list_knowledge_tree
 from app.schemas.materials import (
     KnowledgeCardOut,
@@ -30,7 +30,7 @@ from app.schemas.materials import (
     SkillUpdate,
 )
 from app.services.analytics import load_mastery_items
-from app.services.settings_service import load_llm_settings
+from app.services.question_extraction import start_knowledge_extraction
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -631,15 +631,39 @@ async def extract_material(
     material = await db.get(Material, material_id)
     if material is None:
         raise HTTPException(status_code=404, detail="资料不存在。")
-    llm = await load_llm_settings(db)
-    result = await extract_material_units(db, material_id, llm)
-    return {"status": "success", **result}
+
+    # 长资料按章节覆盖后要跑很多批，同步请求会先被浏览器掐断
+    job = await start_knowledge_extraction(db, material_id)
+    return {"status": "accepted", "job_id": job.id, "message": job.message}
 
 
 class SkillPackImportRequest(BaseModel):
     repo: str = ""
     use_builtin: bool = False
     source_key: str = "huasheng13"
+
+
+@router.get("/extract/jobs/{job_id}")
+async def knowledge_extract_job(
+    job_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    job = await db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在。")
+    result = {}
+    try:
+        result = json.loads(job.result_json or "{}")
+    except json.JSONDecodeError:
+        result = {}
+    return {
+        "id": job.id,
+        "status": job.status,
+        "progress": job.progress,
+        "message": job.message,
+        "error": job.error,
+        "result": result,
+    }
 
 
 @router.get("/skill-sources")

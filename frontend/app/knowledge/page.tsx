@@ -21,6 +21,7 @@ import {
   createKnowledgeUnit,
   createPointFromUnit,
   extractMaterialUnits,
+  fetchKnowledgeExtractJob,
   fetchKnowledgeUnits,
   fetchMaterials,
   fetchSkills,
@@ -197,12 +198,29 @@ export default function KnowledgeMiningPage() {
     }
     setExtracting(true);
     try {
-      const result = await extractMaterialUnits(materialId);
+      const started = await extractMaterialUnits(materialId);
+      // 按章节覆盖全书后要跑很多批，改成后台任务轮询
+      let result = null as Awaited<
+        ReturnType<typeof fetchKnowledgeExtractJob>
+      > | null;
+      for (;;) {
+        const job = await fetchKnowledgeExtractJob(started.job_id);
+        setNotice({ kind: "success", text: job.message });
+        if (job.status === "done") {
+          result = job;
+          break;
+        }
+        if (job.status === "failed") {
+          throw new Error(job.error || "抽取失败");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      const body = result.result;
       setNotice({
         kind: "success",
-        text: `抽取完成：${result.units} 个知识单元、${result.skills} 个技能（${
-          result.model || "规则"
-        }）${result.warning ? `。${result.warning}` : ""}`,
+        text: `抽取完成：${body?.units ?? 0} 个知识单元、${
+          body?.skills ?? 0
+        } 个技能${body?.warning ? `。${body.warning}` : ""}`,
       });
       await load();
     } catch (error) {

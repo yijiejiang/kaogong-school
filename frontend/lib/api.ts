@@ -343,10 +343,23 @@ export async function createPointFromUnit(unitId: string): Promise<{
 
 export async function extractMaterialUnits(
   materialId: string,
-): Promise<ExtractionResult> {
+): Promise<{ status: string; job_id: string; message: string }> {
   return request(`/api/knowledge/extract/${encodeURIComponent(materialId)}`, {
     method: "POST",
   });
+}
+
+export async function fetchKnowledgeExtractJob(jobId: string): Promise<{
+  id: string;
+  status: string;
+  progress: number;
+  message: string;
+  error: string;
+  result: ExtractionResult;
+}> {
+  return request(
+    `/api/knowledge/extract/jobs/${encodeURIComponent(jobId)}`,
+  );
 }
 
 export async function generateExam(config: ExamConfig): Promise<ExamSummary> {

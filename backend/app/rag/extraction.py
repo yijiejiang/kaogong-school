@@ -11,8 +11,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import Chunk, KnowledgePoint, KnowledgeUnit, Skill
+from app.db.models import Chunk, KnowledgePoint, KnowledgeUnit, Material, Skill
+from app.rag.evidence import check_evidence
 from app.schemas.settings import LlmSettings
+from app.services.extract_scopes import build_scopes, scope_chunk_ids
 from app.services.llm import normalize_model, role_model_config
 from app.services.usage import record_usage
 
@@ -294,6 +296,11 @@ def _build_prompt(
         "name 要具体，parent_knowledge_point_id 从上面列表选，reason 说明为什么是新考点；"
         "否则 name 留空。\n"
         "10. confidence 为 0–1。\n"
+        "11. evidence 必填：给出这条知识的可核对出处，格式"
+        '{"page": 页码整数, "quote": "原文中连续的 10-40 字"}\n'
+        "    页码必须来自上面片段标注的页码；quote 必须能在那一页原文里找到。\n"
+        "    如果是你根据资料推导、原文没有直接写的，evidence 填 "
+        '{"page": 0, "quote": ""} 并在 summary 里说明是推导。\n'
         "请直接输出最终 JSON，不要输出思考过程。\n\n"
         "资料片段：\n" + "\n\n".join(chunk_lines)
     )
@@ -435,8 +442,19 @@ async def _llm_units(
             points_by_name,
             endpoint.model,
         )
-        if unit is not None:
-            units.append(unit)
+        if unit is None:
+            continue
+        # 核对出处：页码要在本批范围内，短句要真能在该页找到
+        chunk = chunks[index]
+        sources = {chunk.page: chunk.content} if chunk.page else {}
+        verdict = check_evidence(
+            raw.get("evidence"),
+            sources,
+            allowed_pages=set(sources) if sources else None,
+        )
+        unit["evidence_ok"] = verdict.ok
+        unit["evidence_reason"] = verdict.reason
+        units.append(unit)
     if not units:
         raise ExtractionError("LLM returned no valid units")
     return units
@@ -633,19 +651,39 @@ async def extract_material_units(
     await db.execute(
         delete(KnowledgeUnit).where(KnowledgeUnit.material_id == material_id)
     )
-    chunks = list(
-        (
-            await db.execute(
-                select(Chunk)
-                .where(
-                    Chunk.material_id == material_id,
-                    Chunk.chunk_type.in_(ELIGIBLE_TYPES),
+    # 按范围覆盖全书：原来只取前 30 个「合格类型」的块，长资料后半段
+    # 根本抽不到知识；而且 summary 类的讲义正文被排除在外。
+    material = await db.get(Material, material_id)
+    if material is not None:
+        scope_rows = await build_scopes(db, material, kind="knowledge")
+    else:
+        scope_rows = []
+    if scope_rows:
+        ids: list[str] = []
+        for scope in sorted(scope_rows, key=lambda r: r.order_index):
+            for cid in scope_chunk_ids(scope):
+                if cid not in ids:
+                    ids.append(cid)
+        chunks = list(
+            (
+                await db.execute(
+                    select(Chunk)
+                    .where(Chunk.id.in_(ids))
+                    .order_by(Chunk.chunk_index)
                 )
-                .order_by(Chunk.chunk_index)
-                .limit(MAX_RULE_CHUNKS)
-            )
-        ).scalars()
-    )
+            ).scalars()
+        )
+    else:
+        chunks = list(
+            (
+                await db.execute(
+                    select(Chunk)
+                    .where(Chunk.material_id == material_id)
+                    .order_by(Chunk.chunk_index)
+                    .limit(MAX_RULE_CHUNKS)
+                )
+            ).scalars()
+        )
     if not chunks:
         await db.commit()
         return {
@@ -751,7 +789,8 @@ async def extract_material_units(
             proposed_parent_id=raw.get("proposed_parent_id", ""),
             proposed_reason=raw.get("proposed_reason", ""),
             confidence=raw.get("confidence", 0.5),
-            status="draft",
+            # 出处核对不上的降为待审，不当作可靠知识
+            status="draft" if raw.get("evidence_ok", True) else "needs_review",
             evidence_json=json.dumps(raw.get("evidence") or [], ensure_ascii=False),
             extraction_model=raw.get("model", model_used),
         )

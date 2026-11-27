@@ -47,6 +47,7 @@ CHUNK_COLUMNS = {
     "time_start": "FLOAT",
     "time_end": "FLOAT",
     "frame_path": "VARCHAR(512) NOT NULL DEFAULT ''",
+    "page_image_path": "VARCHAR(512) NOT NULL DEFAULT ''",
 }
 
 KNOWLEDGE_UNIT_COLUMNS = {

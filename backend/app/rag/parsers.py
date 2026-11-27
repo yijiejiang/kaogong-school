@@ -14,6 +14,7 @@ import pymupdf
 from bs4 import BeautifulSoup
 
 from app.rag.ocr import ocr_image
+from app.rag.page_images import find_sparse_pages
 from app.rag.text import normalize_text
 from app.services.deepseek_tools import (
     DeepSeekConfig,
@@ -259,8 +260,11 @@ def _parse_pdf(
 
     warning = ""
     warnings: list[str] = []
-    if _looks_scanned(pages):
-        warning = "疑似扫描版 PDF（文字层稀薄）。"
+    # 逐页判断：一份资料里通常只有几页是扫描页或纯图表页，
+    # 整本送 OCR 既慢又费钱。
+    sparse_pages = find_sparse_pages(pages)
+    if sparse_pages:
+        warning = f"有 {len(sparse_pages)} 页文字层稀薄（疑似扫描页或图表页）。"
         if deepseek and deepseek.ready:
             ocr_pages, ocr_warnings, truncated = _ocr_in_batches(
                 deepseek, path, filename, len(pages)
@@ -270,13 +274,13 @@ def _parse_pdf(
                 existing = dict(pages)
                 existing.update(dict(ocr_pages))
                 pages = sorted(existing.items())
-                warning = f"扫描版 PDF 已使用 DeepSeek OCR（识别 {len(ocr_pages)} 页）。"
+                warning = f"已用 DeepSeek OCR 识别 {len(ocr_pages)} 页。"
                 record_ocr_pages(len(ocr_pages))
             if truncated:
                 warnings.append(f"{truncated} 页输出被截断，内容可能不完整。")
             warnings.extend(ocr_warnings)
         else:
-            warnings.append("未配置 DeepSeek Key，无法对扫描页做 OCR。")
+            warnings.append("未配置 DeepSeek Key，稀疏页只能保留占位引用。")
 
     pages = _strip_page_noise(pages)
     text = "\n\n".join(page_text for _, page_text in pages if page_text)

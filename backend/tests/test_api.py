@@ -1091,9 +1091,18 @@ def test_knowledge_extraction_review_flow() -> None:
 
         rerun = client.post(f"/api/knowledge/extract/{material['id']}")
         assert rerun.status_code == 200
-        body = rerun.json()
-        assert body["model"] == "rule"
-        assert body["units"] > 0
+        job_id = rerun.json()["job_id"]
+
+        # 抽取改成后台任务，等它跑完再看结果
+        body: dict = {}
+        for _ in range(100):
+            status = client.get(f"/api/knowledge/extract/jobs/{job_id}").json()
+            if status["status"] in {"done", "failed"}:
+                body = status.get("result") or {}
+                assert status["status"] == "done", status.get("error")
+                break
+            time.sleep(0.1)
+        assert body.get("units", 0) > 0
         fresh = client.get(
             "/api/knowledge/units",
             params={"material_id": material["id"]},
@@ -2029,3 +2038,33 @@ def test_scope_splits_when_section_too_large() -> None:
     assert len(plans) >= 3
     for plan in plans:
         assert len(plan.chunk_ids) * size <= SCOPE_CHARS + size
+
+
+def test_evidence_check_catches_fabrication() -> None:
+    """模型编的页码和原文短句要能被识别出来。"""
+    from app.rag.evidence import check_evidence
+
+    pages = {5: "截位直除时分母截前三位，分子按同比例截位，再直接相除。"}
+
+    ok = check_evidence(
+        {"page": 5, "quote": "分母截前三位"}, pages, allowed_pages={5}
+    )
+    assert ok.ok
+
+    bad = check_evidence(
+        {"page": 99, "quote": "分母截前三位"}, pages, allowed_pages={5}
+    )
+    assert not bad.ok and "范围" in bad.reason
+
+    bad = check_evidence(
+        {"page": 5, "quote": "这句原文里根本不存在"}, pages, allowed_pages={5}
+    )
+    assert not bad.ok and "找不到" in bad.reason
+
+    bad = check_evidence({"page": 5, "quote": "截位"}, pages, allowed_pages={5})
+    assert not bad.ok
+
+    ok = check_evidence({"page": 0, "quote": ""}, pages)
+    assert ok.ok
+
+    assert not check_evidence(None, pages).ok
