@@ -551,19 +551,30 @@ function SkillInsight({ skills }: { skills: FeedbackSkill[] }) {
         {skills.map((skill) => (
           <div key={skill.id} className="rounded-lg bg-white/70 px-2.5 py-2">
             <div className="font-medium text-ink">{skill.name}</div>
-            {skill.exam_patterns[0] && (
-              <div className="mt-0.5">怎么考：{skill.exam_patterns[0]}</div>
+            {skill.summary && (
+              <div className="mt-0.5 text-[#4a5561]">{skill.summary}</div>
+            )}
+            {skill.exam_patterns.length > 0 && (
+              <div className="mt-0.5">怎么考：{skill.exam_patterns.join("；")}</div>
             )}
             {skill.signals.length > 0 && (
               <div className="mt-0.5">
-                识别信号：{skill.signals.slice(0, 2).join("；")}
+                识别信号：{skill.signals.join("、")}
               </div>
             )}
             {skill.steps.length > 0 && (
               <div className="mt-0.5">
-                步骤：{skill.steps.slice(0, 2).join(" → ")}
+                步骤：{skill.steps.join(" → ")}
               </div>
             )}
+            {!skill.summary &&
+              skill.exam_patterns.length === 0 &&
+              skill.signals.length === 0 &&
+              skill.steps.length === 0 && (
+                <div className="mt-0.5 text-[#8a8475]">
+                  这条技能只有名称，点「打开技能地图」可以补充内容。
+                </div>
+              )}
           </div>
         ))}
       </div>

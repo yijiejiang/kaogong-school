@@ -63,6 +63,7 @@ CN_RE = re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*(.+)$")
 TOPIC_RE = re.compile(r"\*\*识别\*\*\s*[：:]\s*(.+)")
 BULLET_RE = re.compile(r"^[-*]\s+(.+)$")
 TRAP_RE = re.compile(r"^[-*]\s*(?:易错|注意|陷阱)[：:]\s*(.+)")
+EXAM_RE = re.compile(r"\*\*(?:怎么考|考查方式|题型特点|常见考法|出题形式)\*\*\s*[：:]\s*(.+)")
 CJK_RE = re.compile(r"[一-鿿]")
 
 
@@ -176,6 +177,18 @@ def _signals(body: str) -> list[str]:
     ][:5]
 
 
+def _exam_patterns(body: str, limit: int = 3) -> list[str]:
+    """提取「怎么考」这类描述。原文没写就返回空，不要拿文件名顶替。"""
+    found: list[str] = []
+    for match in EXAM_RE.finditer(body):
+        value = _clean_title(match.group(1))
+        if value and len(value) >= 6 and value not in found:
+            found.append(value[:120])
+        if len(found) >= limit:
+            break
+    return found
+
+
 def _traps(body: str, limit: int = 4) -> list[str]:
     found: list[str] = []
     for line in body.splitlines():
@@ -240,6 +253,7 @@ def build_skills(source: Path) -> list[dict]:
                     "steps": steps,
                     "signals": signals,
                     "pitfalls": _traps(body),
+                    "exam_patterns": _exam_patterns(body),
                     "source_ref": f"{path.name}",
                 }
             )
@@ -301,8 +315,11 @@ async def apply_skills(
         row.steps_json = json.dumps(item["steps"], ensure_ascii=False)
         row.pitfalls_json = json.dumps(item["pitfalls"], ensure_ascii=False)
         row.signals_json = json.dumps(item["signals"], ensure_ascii=False)
+        # 这里原来塞的是「来源文件名」，不是考法内容——前端显示成
+        # 「怎么考：huasheng13:shizheng-redian.md」这种无意义文本。
+        # 解析器没提取到考法就留空，前端按「暂无」处理。
         row.exam_patterns_json = json.dumps(
-            [f"{source_key}:{item['source_ref']}"], ensure_ascii=False
+            item.get("exam_patterns") or [], ensure_ascii=False
         )
         row.source = source_key
         row.source_ref = item["source_ref"]
