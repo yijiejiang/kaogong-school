@@ -2,7 +2,14 @@ import json
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,9 +47,12 @@ router = APIRouter(prefix="/api", tags=["materials"])
 async def upload_material(
     file: Annotated[UploadFile, File(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    extract_questions: Annotated[bool, Form()] = True,
 ) -> MaterialOut:
     try:
-        material = await create_uploaded_material(db, file)
+        material = await create_uploaded_material(
+            db, file, extract_questions=extract_questions
+        )
     except ParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return MaterialOut.model_validate(material)
@@ -54,7 +64,9 @@ async def import_url(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MaterialOut:
     try:
-        material = await create_url_material(db, payload.url)
+        material = await create_url_material(
+            db, payload.url, extract_questions=payload.extract_questions
+        )
     except UnsafeUrl as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return MaterialOut.model_validate(material)

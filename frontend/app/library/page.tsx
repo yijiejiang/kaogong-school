@@ -77,6 +77,8 @@ export default function LibraryPage() {
   const [tree, setTree] = useState<KnowledgeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // 解析篇、纯讲义这类资料不需要抽题，避免污染题库
+  const [extractQuestions, setExtractQuestions] = useState(true);
   const [url, setUrl] = useState("");
   const [notice, setNotice] = useState<{
     kind: "success" | "error";
@@ -128,7 +130,7 @@ export default function LibraryPage() {
     try {
       const uploaded: Material[] = [];
       for (const file of Array.from(files)) {
-        uploaded.push(await uploadMaterial(file));
+        uploaded.push(await uploadMaterial(file, { extractQuestions }));
       }
       setNotice({
         kind: "success",
@@ -381,6 +383,21 @@ export default function LibraryPage() {
                   也可以一次选择多个文件
                 </span>
               </button>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-line bg-white/70 px-3 py-2.5 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={extractQuestions}
+                  onChange={(event) => setExtractQuestions(event.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#2f5d50]"
+                />
+                <span>
+                  <span className="font-medium text-ink">入库时抽题目</span>
+                  <span className="ml-1">
+                    默认开启。讲义、解析篇这类不需要进题库的资料可以取消勾选，
+                    只做知识索引。
+                  </span>
+                </span>
+              </label>
               <input
                 ref={fileInputRef}
                 type="file"

@@ -93,7 +93,11 @@ def resolve_upload_path(relative: str) -> Path:
     return path
 
 
-async def create_uploaded_material(db: AsyncSession, file: UploadFile) -> Material:
+async def create_uploaded_material(
+    db: AsyncSession,
+    file: UploadFile,
+    extract_questions: bool = True,
+) -> Material:
     settings = get_settings()
     filename = sanitize_filename(file.filename or "document")
     suffix = Path(filename).suffix.lower()
@@ -150,6 +154,7 @@ async def create_uploaded_material(db: AsyncSession, file: UploadFile) -> Materi
         mime_type=file.content_type or "",
         size_bytes=size,
         status="pending",
+        extract_questions=extract_questions,
     )
     db.add(material)
     await db.commit()
@@ -158,7 +163,9 @@ async def create_uploaded_material(db: AsyncSession, file: UploadFile) -> Materi
     return material
 
 
-async def create_url_material(db: AsyncSession, url: str) -> Material:
+async def create_url_material(
+    db: AsyncSession, url: str, extract_questions: bool = True
+) -> Material:
     url = url.strip()
     if not is_public_url(url):
         raise UnsafeUrl("只允许导入公网 http/https 地址。")
@@ -170,6 +177,7 @@ async def create_url_material(db: AsyncSession, url: str) -> Material:
         kind="video" if is_video_url(url) else "url",
         source_url=url,
         status="pending",
+        extract_questions=extract_questions,
     )
     db.add(material)
     await db.commit()
@@ -482,13 +490,18 @@ async def run_ingestion_job(job_id: str, material_id: str) -> None:
                 job.message = f"识别题目 {done}/{total} 批"
                 await db.commit()
 
-            try:
-                question_result = await extract_questions(
-                    db, material.id, llm, progress=_question_progress
-                )
-            except Exception as exc:
-                logger.exception("question extraction failed")
-                question_result["warning"] = f"题目识别失败：{str(exc)[:150]}"
+            if not material.extract_questions:
+                question_result["warning"] = "这份资料设置了不抽题目。"
+            else:
+                try:
+                    question_result = await extract_questions(
+                        db, material.id, llm, progress=_question_progress
+                    )
+                except Exception as exc:
+                    logger.exception("question extraction failed")
+                    question_result["warning"] = (
+                        f"题目识别失败：{str(exc)[:150]}"
+                    )
 
             material.status = "ready"
             material.error = ""

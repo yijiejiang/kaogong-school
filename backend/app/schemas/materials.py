@@ -71,6 +71,8 @@ class JobOut(BaseModel):
 
 class UrlImportRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
+    # 这份资料入库时是否抽题目
+    extract_questions: bool = True
 
 
 class SearchRequest(BaseModel):

@@ -147,9 +147,16 @@ export async function fetchMaterial(id: string): Promise<MaterialDetail> {
   return request(`/api/materials/${encodeURIComponent(id)}`);
 }
 
-export async function uploadMaterial(file: File): Promise<Material> {
+export async function uploadMaterial(
+  file: File,
+  options?: { extractQuestions?: boolean },
+): Promise<Material> {
   const form = new FormData();
   form.append("file", file);
+  form.append(
+    "extract_questions",
+    options?.extractQuestions === false ? "false" : "true",
+  );
   const response = await fetch(`${API_BASE}/api/materials/upload`, {
     method: "POST",
     body: form,
@@ -167,10 +174,16 @@ export async function uploadMaterial(file: File): Promise<Material> {
   return (await response.json()) as Material;
 }
 
-export async function importUrl(url: string): Promise<Material> {
+export async function importUrl(
+  url: string,
+  options?: { extractQuestions?: boolean },
+): Promise<Material> {
   return request("/api/materials/import-url", {
     method: "POST",
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({
+      url,
+      extract_questions: options?.extractQuestions !== false,
+    }),
   });
 }
 

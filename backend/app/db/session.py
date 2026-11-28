@@ -93,6 +93,10 @@ NOTIFICATION_COLUMNS = {
     "link": "VARCHAR(512) NOT NULL DEFAULT ''",
 }
 
+MATERIAL_COLUMNS = {
+    "extract_questions": "BOOLEAN NOT NULL DEFAULT 1",
+}
+
 _TABLE_COLUMNS = {
     "chunks": CHUNK_COLUMNS,
     "knowledge_units": KNOWLEDGE_UNIT_COLUMNS,
@@ -100,6 +104,7 @@ _TABLE_COLUMNS = {
     "questions": QUESTION_COLUMNS,
     "llm_usage": USAGE_COLUMNS,
     "notifications": NOTIFICATION_COLUMNS,
+    "materials": MATERIAL_COLUMNS,
 }
 
 

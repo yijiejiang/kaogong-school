@@ -38,6 +38,8 @@ class Material(Base):
     subject: Mapped[str] = mapped_column(String(32), default="")
     module: Mapped[str] = mapped_column(String(64), default="")
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 这份资料入库时是否抽题目。解析篇、纯讲义这类可以关掉
+    extract_questions: Mapped[bool] = mapped_column(Boolean, default=True)
     embedding_model: Mapped[str] = mapped_column(String(128), default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
